@@ -1,4 +1,3 @@
-
 class nAndc:
     def __init__(self):
         self.__elements = [' '] * 9
@@ -46,7 +45,6 @@ class nAndc:
             self.__elements = ' '
 
 class ult_nAndc:
-
     def __init__(self):
         self.__elements = [nAndc()] * 9
         self.__victor = ' '
