@@ -34,25 +34,23 @@ def recv_line(sock: socket.socket) -> Optional[Dict]:
 
 
 class GameServer:
-    def __init__(self, required_players: int):
-        """
-        required_players: 2 or 3
-        """
+    """
+    Host-side server.
+    required_players: 2 or 3
+    players will be: ["X", "O"] or ["X", "O", "Z"]
+    everyone else => spectator
+    """
+    def __init__(self, required_players: int = 2):
+        assert required_players in (2, 3), "Only 2 or 3 players allowed"
         self.required_players = required_players
-        # for 2 players → ['X','O']
-        # for 3 players → ['X','O','Z']
         self.player_order: List[str] = ["X", "O"] if required_players == 2 else ["X", "O", "Z"]
 
         self.board = UltimateBoard()
         self.lock = threading.Lock()
 
-        # actual sockets of players, keyed by mark
         self.players: Dict[str, socket.socket] = {}
-
-        # anyone after required_players joins → spectator
         self.spectators: List[socket.socket] = []
 
-        # index into player_order
         self.turn_index: int = 0
         self.running = True
 
@@ -73,37 +71,34 @@ class GameServer:
             "players": list(self.players.keys()),
         }
 
-        # send to players
-        dead_players = []
-        for mark, s in self.players.items():
+        # players
+        dead = []
+        for mark, sock in self.players.items():
             try:
-                send(s, state)
+                send(sock, state)
             except OSError:
-                dead_players.append(mark)
-        for mark in dead_players:
+                dead.append(mark)
+        for mark in dead:
             del self.players[mark]
 
-        # send to spectators
+        # spectators
         alive_specs = []
-        for s in self.spectators:
+        for sock in self.spectators:
             try:
-                send(s, state)
-                alive_specs.append(s)
+                send(sock, state)
+                alive_specs.append(sock)
             except OSError:
                 pass
         self.spectators = alive_specs
 
     def handle_client(self, sock: socket.socket, role: str):
-        """
-        role = "X" | "O" | "Z" | "SPECTATOR"
-        """
+        # first message: tell the client what they are
         send(sock, {
             "type": "assign",
             "you_are": role,
             "required_players": self.required_players,
             "connected_players": len(self.players),
         })
-        # send first state
         self.broadcast_state()
 
         try:
@@ -112,13 +107,13 @@ class GameServer:
                 if msg is None:
                     break
 
-                # spectators can't move
                 if msg.get("type") == "move":
+                    # spectators can't move
                     if role not in self.player_order:
                         send(sock, {"type": "error", "message": "You are a spectator"})
                         continue
 
-                    # If not enough players yet, don't accept moves
+                    # if we don't have all players yet, no moves
                     if len(self.players) < self.required_players:
                         send(sock, {"type": "error", "message": "Waiting for more players"})
                         continue
@@ -136,12 +131,11 @@ class GameServer:
                             send(sock, {"type": "error", "message": "Illegal move"})
                             continue
 
-                        # swap turns if game not over
+                        # advance turn if game not over
                         if not self.board.macro_winner and not self.board.macro_tied:
                             self.next_turn()
 
                     self.broadcast_state()
-
         finally:
             try:
                 sock.close()
@@ -153,16 +147,14 @@ class GameServer:
             client, addr = server_sock.accept()
             print(f"[SERVER] connection from {addr}")
 
-            # Decide role
             if len(self.players) < self.required_players:
-                # give next mark in order
                 role = self.player_order[len(self.players)]
                 self.players[role] = client
                 print(f"[SERVER] assigned {role}")
             else:
                 role = "SPECTATOR"
                 self.spectators.append(client)
-                print(f"[SERVER] assigned SPECTATOR")
+                print("[SERVER] assigned SPECTATOR")
 
             t = threading.Thread(target=self.handle_client, args=(client, role), daemon=True)
             t.start()
@@ -176,13 +168,7 @@ class GameServer:
             self.accept_loop(server)
 
 
+# we still allow running it directly for testing
 if __name__ == "__main__":
-    # ask the host how many players
-    while True:
-        choice = input("Number of players (2 or 3): ").strip()
-        if choice in ("2", "3"):
-            n = int(choice)
-            break
-        print("Please enter 2 or 3.")
-    gs = GameServer(n)
+    gs = GameServer(2)
     gs.run()
