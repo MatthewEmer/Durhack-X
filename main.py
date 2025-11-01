@@ -117,35 +117,40 @@ class Small_Board(Board):
 
         
     def CheckForClear(self):
-        if self._Board__filledCells == 8:
+        self._Board__filledCells += 1
+
+        if self._Board__filledCells == 9:
             for cell in self._Board__cells:
                 cell = 0
             self._Board__filledCells = 0
-        else:
-            self._Board__filledCells += 1
 
     
     def CheckForWin(self, x, y, player):
         if self._Board__filledCells < 3: 
-            return
+            return False
         
-        if Board.GetCell(self, x + 1, y) == player and Board.GetCell(self, x - 1, y) == player: # Checks Row
-            Board.SetWinner(self, player)
-            return True
-        elif Board.GetCell(self, x, y + 1) == player and Board.GetCell(self, x, y - 1) == player: # Checks Column
-            Board.SetWinner(self, player)
-            return True
-        elif Board.GetCell(self, x + 1, y + 1) == player and Board.GetCell(self, x - 1, y - 1) == player: # Checks Diagonal 1
-            Board.SetWinner(self, player)
-            return True
-        elif Board.GetCell(self, x - 1, y + 1) == player and Board.GetCell(self, x + 1, y - 1) == player: # Checks Diagonal 2
-            Board.SetWinner(self, player)
-            return True
+        if Board.GetCell(self, x + 1, y) == player:
+            if Board.GetCell(self, x - 1, y) == player: # Checks Row
+                Board.SetWinner(self, player)
+                return True
+        if Board.GetCell(self, x, y + 1) == player:
+            if Board.GetCell(self, x, y - 1) == player: # Checks Column
+                Board.SetWinner(self, player)
+                return True 
+        if Board.GetCell(self, 1, 1) == player:
+            if Board.GetCell(self, 0, 0) == player:
+                if Board.GetCell(self, 2, 2) == player: # Checks Diagonal 1
+                    Board.SetWinner(self, player)
+                    return True
+            if Board.GetCell(self, 0, 2) == player:
+                if Board.GetCell(self, 2, 0) == player: # Checks Diagonal 2
+                    Board.SetWinner(self, player)
+                    return True
         
         return False
     
     def Pressed(self, x, y, player):
-        if self._Board__winner != 0:
+        if self._Board__winner != 0 or self.GetCover() == True:
             return -1
         
         cellShifts = [[2.8, 4.2], [62.5, 4.2], [122.2, 4.2], [2.8, 62.5], [62.5, 62.5], [122.2, 62.5], [2.8, 122.2], [62.5, 122.2], [122.2, 122.2]]
@@ -156,6 +161,9 @@ class Small_Board(Board):
             cellStartY = self._Board__y + cellShifts[i][1]
 
             if x >= cellStartX and x <= cellStartX + cellSize and y >= cellStartY and y <= cellStartY + cellSize:
+                if self._Board__cells[i] != 0:
+                    return -1
+                
                 self._Board__cells[i] = player
                 self.CheckForClear()
                 self.CheckForWin(i % 3, int(i / 3), player)
@@ -272,17 +280,17 @@ while not gameOver:
             selectedBoard = Press(event, boards, player)
             
             # Updating the board for the next turn
-            if player == 3:
-                player = 1
-            else:
-                player += 1
-
             if selectedBoard != -1:
                 for i in range(9):
                     if i != selectedBoard:
                         boards[i].SetCover(True)
                     else:
                         boards[i].SetCover(False)
+
+                if player == 3:
+                    player = 1
+                else:
+                    player += 1
             #
             
     #
