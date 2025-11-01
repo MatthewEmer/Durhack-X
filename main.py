@@ -39,42 +39,41 @@ for i in range(9):
 # Game Logic
 class Board:
     def __init__(self, icon, x = 0, y = 0, cover=""):
-        self.icon = icon
-        self.x = x
-        self.y = y
+        self.__icon = icon
+        self.__x = x
+        self.__y = y
 
-        self.cells = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-        self.filledCells = 0
+        self.__cells = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+        self.__filledCells = 0
 
-        self.covered = False
-        self.cover = cover
+        self.__covered = False
+        self.__cover = cover
 
-        self.winner = 0
+        self.__winner = 0
 
     
     # Getters and Setters
     def GetWinner(self):
-        return self.winner
+        return self.__winner
     
     
     def SetWinner(self, playerNumber):
-        self.finished = True
-        self.winner = playerNumber
+        self.__winner = playerNumber
 
 
     def GetCell(self, x, y):
-        return self.cells[(x % 3) + 3 * (y % 3)]
+        return self.__cells[(x % 3) + 3 * (y % 3)]
     
 
     def SetCell(self, x, y, player):
-        if GetCell(x, y) == 0:
-            self.cells[(x % 3) + 3 * (y % 3)] = player
+        if self.GetCell(x, y) == 0:
+            self.__cells[(x % 3) + 3 * (y % 3)] = player
             self.CheckClear()
     #
 
 
     def Display(self):
-        screen.blit(self.icon, (self.x, self.y))
+        screen.blit(self.__icon, (self.__x, self.__y))
 
 
     def CheckForWin(self):
@@ -84,34 +83,34 @@ class Board:
 class Small_Board(Board):
     # Getters and Setters
     def SetCover(self, covered):
-        self.covered = covered
+        self.__covered = covered
     #
 
 
     def Display(self, smallIcons, largeIcons):
-        if self.winner != 0:
-            screen.blit(largeIcons[self.winner], (self.x + 10, self.y + 10)) # Draws the large icon for a won board
+        if self.__winner != 0:
+            screen.blit(largeIcons[self.__winner], (self.__x + 10, self.__y + 10)) # Draws the large icon for a won board
             return
         
-        print(self.x, self.y)
-        screen.blit(self.icon, (self.x, self.y)) # Draws the board
+        print(self.__x, self.__y)
+        screen.blit(self.__icon, (self.__x, self.__y)) # Draws the board
 
         cellShifts = [[2.8, 4.2], [62.5, 4.2], [122.2, 4.2], [2.8, 62.5], [62.5, 62.5], [122.2, 62.5], [2.8, 122.2], [62.5, 122.2], [122.2, 122.2]]
         for cellIndex in range(9):
-            cellIcon = smallIcons[self.cells[cellIndex]]
+            cellIcon = smallIcons[self.__cells[cellIndex]]
 
             if cellIcon == "BLANK CELL":
                 continue
 
-            screen.blit(cellIcon, (self.x + cellShifts[cellIndex][0], self.y + cellShifts[cellIndex][1])) # Draws the icons
+            screen.blit(cellIcon, (self.__x + cellShifts[cellIndex][0], self.__y + cellShifts[cellIndex][1])) # Draws the icons
 
-        if self.covered:
-            screen.blit(self.cover, (self.x - 2.5, self.y - 2))
+        if self.__covered:
+            screen.blit(self.__cover, (self.__x - 2.5, self.__y - 2))
 
         
     def CheckForClear(self):
-        if self.filledCells == 8:
-            for cell in cells:
+        if self.__filledCells == 8:
+            for cell in self.__cells:
                 cell = 0
             self.moves = 0
         else:
