@@ -46,7 +46,7 @@ for i in range(9):
 class Small_Board:
     def __init__(self, icon, cover, x, y):
         self.icon = icon
-        self.cells = [0, 2, 0, 1, 0, 0, 3, 2, 0]
+        self.cells = [0, 0, 0, 0, 0, 0, 0, 0, 0]
         self.x = x
         self.y = y
 
@@ -101,11 +101,6 @@ boardBM = Small_Board(smallBoard, boardCovers[7], 215, 420)
 boardBR = Small_Board(smallBoard, boardCovers[8], 420, 420)
 
 boards = [boardTL, boardTM, boardTR, boardML, boardMM, boardMR, boardBL, boardBM, boardBR]
-
-boardMM.SetWinner(2)
-boardTL.SetCover(True)
-boardBR.SetCover(True)
-boardML.SetCover(True)
 #
 
 
