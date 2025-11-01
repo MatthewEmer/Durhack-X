@@ -1,7 +1,6 @@
 class nAndc:
     def __init__(self):
         self.__elements = [' '] * 9
-        # self.__elements = ['X', 'O', 'O', 'O', 'X', 'O', 'O', 'O', 'X']
         self.__moves = 0
         self.winner = ' '
 
