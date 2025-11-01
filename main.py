@@ -54,26 +54,26 @@ class Board:
     
     # Getters and Setters
     def GetWinner(self):
-        return self.__winner
+        return self._Board__winner
     
     
     def SetWinner(self, playerNumber):
-        self.__winner = playerNumber
+        self._Board__winner = playerNumber
 
 
     def GetCell(self, x, y):
-        return self.__cells[(x % 3) + 3 * (y % 3)]
+        return self._Board__cells[(x % 3) + 3 * (y % 3)]
     
 
     def SetCell(self, x, y, player):
-        if self.GetCell(x, y) == 0:
-            self.__cells[(x % 3) + 3 * (y % 3)] = player
-            self.CheckClear()
+        if self._BoardGetCell(x, y) == 0:
+            self._Board__cells[(x % 3) + 3 * (y % 3)] = player
+            self._BoardCheckClear()
     #
 
 
     def Display(self):
-        screen.blit(self.__icon, (self.__x, self.__y))
+        screen.blit(self._Board__icon, (self._Board__x, self._Board__y))
 
 
     def CheckForWin(self):
@@ -83,55 +83,54 @@ class Board:
 class Small_Board(Board):
     # Getters and Setters
     def SetCover(self, covered):
-        self.__covered = covered
+        self._Board__covered = covered
     #
 
 
     def Display(self, smallIcons, largeIcons):
-        if self.__winner != 0:
-            screen.blit(largeIcons[self.__winner], (self.__x + 10, self.__y + 10)) # Draws the large icon for a won board
+        if self._Board__winner != 0:
+            screen.blit(largeIcons[self._Board__winner], (self._Board__x + 10, self._Board__y + 10)) # Draws the large icon for a won board
             return
         
-        print(self.__x, self.__y)
-        screen.blit(self.__icon, (self.__x, self.__y)) # Draws the board
+        screen.blit(self._Board__icon, (self._Board__x, self._Board__y)) # Draws the board
 
         cellShifts = [[2.8, 4.2], [62.5, 4.2], [122.2, 4.2], [2.8, 62.5], [62.5, 62.5], [122.2, 62.5], [2.8, 122.2], [62.5, 122.2], [122.2, 122.2]]
         for cellIndex in range(9):
-            cellIcon = smallIcons[self.__cells[cellIndex]]
+            cellIcon = smallIcons[self._Board__cells[cellIndex]]
 
             if cellIcon == "BLANK CELL":
                 continue
 
-            screen.blit(cellIcon, (self.__x + cellShifts[cellIndex][0], self.__y + cellShifts[cellIndex][1])) # Draws the icons
+            screen.blit(cellIcon, (self._Board__x + cellShifts[cellIndex][0], self._Board__y + cellShifts[cellIndex][1])) # Draws the icons
 
-        if self.__covered:
-            screen.blit(self.__cover, (self.__x - 2.5, self.__y - 2))
+        if self._Board__covered:
+            screen.blit(self._Board__cover, (self._Board__x - 2.5, self._Board__y - 2))
 
         
     def CheckForClear(self):
-        if self.__filledCells == 8:
-            for cell in self.__cells:
+        if self._Board__filledCells == 8:
+            for cell in self._Board__cells:
                 cell = 0
-            self.moves = 0
+            self._Board__filledCells = 0
         else:
-            self.moves += 1
+            self._Board__filledCells += 1
 
     
     def CheckForWin(self, x, y, player):
-        if self.moves < 3: 
+        if self._Board__filledCells < 3: 
             return
         
-        if self.GetCell(x + 1, y) == player and self.GetCell(x - 1, y) == player: # Checks Row
-            self.SetWinner(player)
+        if self._BoardGetCell(x + 1, y) == player and self._BoardGetCell(x - 1, y) == player: # Checks Row
+            self._BoardSetWinner(player)
             return True
-        elif self.GetCell(x, y + 1) == player and self.GetCell(x, y - 1) == player: # Checks Column
-            self.SetWinner(player)
+        elif self._BoardGetCell(x, y + 1) == player and self._BoardGetCell(x, y - 1) == player: # Checks Column
+            self._BoardSetWinner(player)
             return True
-        elif self.GetCell(x + 1, y + 1) == player and self.GetCell(x - 1, y - 1) == player: # Checks Diagonal 1
-            self.SetWinner(player)
+        elif self._BoardGetCell(x + 1, y + 1) == player and self._BoardGetCell(x - 1, y - 1) == player: # Checks Diagonal 1
+            self._BoardSetWinner(player)
             return True
-        elif self.GetCell(x - 1, y + 1) == player and self.GetCell(x + 1, y - 1) == player: # Checks Diagonal 2
-            self.SetWinner(player)
+        elif self._BoardGetCell(x - 1, y + 1) == player and self._BoardGetCell(x + 1, y - 1) == player: # Checks Diagonal 2
+            self._BoardSetWinner(player)
             return True
         
         return False
@@ -139,35 +138,42 @@ class Small_Board(Board):
 
 class Big_Board(Board):
     def CheckForWin(self, x, y, player):
-        if self.moves < 2:
+        if self._Board__filledCells < 2:
             return
         
         # Checks Rows
-        if x != 2 and self.GetCell(x + 1, y) == player:
+        if x != 2 and self._BoardGetCell(x + 1, y) == player:
             return True
-        if x != 0 and self.GetCell(x - 1, y) == player:
+        if x != 0 and self._BoardGetCell(x - 1, y) == player:
             return True
         #
 
         # Checks Columns
-        if y != 2 and self.GetCell(x, y + 1) == player:
+        if y != 2 and self._BoardGetCell(x, y + 1) == player:
             return True
-        if y != 0 and self.GetCell(x, y - 1) == player:
+        if y != 0 and self._BoardGetCell(x, y - 1) == player:
             return True
         #
 
         # Checks Diagonals 
-        if x != 2 and y != 2 and self.GetCell(x + 1, y + 1) == player:
+        if x != 2 and y != 2 and self._BoardGetCell(x + 1, y + 1) == player:
             return True
-        if x != 0 and y != 0 and self.GetCell(x - 1, y - 1) == player:
+        if x != 0 and y != 0 and self._BoardGetCell(x - 1, y - 1) == player:
             return True
-        if x != 2 and y != 0 and self.GetCell(x + 1, y - 1) == player:
+        if x != 2 and y != 0 and self._BoardGetCell(x + 1, y - 1) == player:
             return True
-        if x != 0 and y != 2 and self.GetCell(x - 1, y + 1) == player:
+        if x != 0 and y != 2 and self._BoardGetCell(x - 1, y + 1) == player:
             return True
         #
         
         return False
+#
+
+
+# Pygame Logic
+def GetAction(keyPressEvent):
+    if keyPressEvent.key == pygame.K_ESC:
+        return "escape"
 #
 
 
@@ -192,7 +198,7 @@ boards = [boardTL, boardTM, boardTR, boardML, boardMM, boardMR, boardBL, boardBM
 
 # Main Game Loop
 gameOver = False
-while (not gameOver):
+while not gameOver:
     # Graphics Placements
     mainBoard.Display()
 
@@ -205,6 +211,12 @@ while (not gameOver):
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             gameOver = True
+            
+        if event.type == pygame.KEYDOWN:
+            action = GetAction(event)
+
+            if action == "escape":
+                gameOver = True
     #
 
     pygame.display.flip() # Update the screen
