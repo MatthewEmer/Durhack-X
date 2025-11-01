@@ -1,3 +1,4 @@
+# client.py
 import json
 import socket
 import threading
@@ -18,13 +19,17 @@ FORCE_COLOR = (220, 220, 140)
 
 PORT = 8765
 
+# screens
+SCREEN_USERNAME = "username"
 SCREEN_MENU = "menu"
 SCREEN_HOST_CHOICE = "host_choice"
+SCREEN_HOST_LOBBY = "host_lobby"
 SCREEN_IP_INPUT = "ip_input"
 SCREEN_GAME = "game"
 
 BACK_BTN_RECT = pygame.Rect(20, 20, 90, 36)
 IP_BOX_RECT = pygame.Rect(120, 250, 480, 50)
+USERNAME_BOX_RECT = pygame.Rect(120, 250, 480, 50)
 
 
 def send(sock, payload: Dict):
@@ -61,6 +66,8 @@ class ClientState:
         self.last_error: Optional[str] = None
         self.required_players: int = 2
         self.connected_players: int = 0
+        self.player_names: Dict[str, str] = {}
+        self.spectator_names = []
 
     def handle(self, msg: Dict):
         t = msg.get("type")
@@ -68,11 +75,15 @@ class ClientState:
             self.you_are = msg.get("you_are")
             self.required_players = msg.get("required_players", 2)
             self.connected_players = msg.get("connected_players", 1)
+            self.player_names = msg.get("player_names", {})
+            self.spectator_names = msg.get("spectator_names", [])
         elif t == "state":
             self.turn = msg.get("turn")
             self.board = msg.get("board")
             self.required_players = msg.get("required_players", self.required_players)
             self.connected_players = msg.get("connected_players", self.connected_players)
+            self.player_names = msg.get("player_names", self.player_names)
+            self.spectator_names = msg.get("spectator_names", self.spectator_names)
             self.last_error = None
         elif t == "error":
             self.last_error = msg.get("message")
@@ -122,14 +133,12 @@ def draw_board(screen, st: ClientState):
         fy = (forced // 3) * cell
         pygame.draw.rect(screen, FORCE_COLOR, (fx, fy, cell, cell))
 
-    # thick lines
     for i in range(4):
         x = i * cell
         pygame.draw.line(screen, GRID_COLOR, (x, 0), (x, HEIGHT), THICK)
         pygame.draw.line(screen, GRID_COLOR, (0, x), (WIDTH, x), THICK)
 
     small = cell // 3
-    # thin lines
     for by in range(3):
         for bx in range(3):
             base_x = bx * cell
@@ -189,16 +198,32 @@ def start_server_in_thread(required_players: int):
     def run():
         gs = GameServer(required_players)
         gs.run()
-
     t = threading.Thread(target=run, daemon=True)
     t.start()
 
 
-def connect_to_server(host: str, port: int, st: ClientState):
+def connect_to_server(host: str, port: int, st: ClientState, username: str):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host, port))
     threading.Thread(target=recv_thread, args=(s, st.handle), daemon=True).start()
+    # tell server our username
+    send(s, {"type": "hello", "name": username})
     return s
+
+
+def get_local_ip() -> str:
+    """
+    Best-effort way to get the IP the hotspot gave us.
+    We never actually contact 8.8.8.8, just use the OS routing table.
+    """
+    try:
+        tmp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        tmp.connect(("8.8.8.8", 80))
+        ip = tmp.getsockname()[0]
+        tmp.close()
+        return ip
+    except OSError:
+        return "127.0.0.1"
 
 
 def main():
@@ -207,11 +232,17 @@ def main():
     pygame.display.set_caption("Ultimate Tic Tac Toe")
     clock = pygame.time.Clock()
 
-    screen_mode = SCREEN_MENU
+    screen_mode = SCREEN_USERNAME
+    username = ""
     ip_text = ""
-    ip_active = False  # we'll still accept keys, but this is for drawing
+    ip_active = False
+
     client_socket = None
     client_state = ClientState()
+
+    # host-only
+    host_local_ip = "127.0.0.1"
+    host_required_players = 2
 
     running = True
     while running:
@@ -219,8 +250,20 @@ def main():
             if e.type == pygame.QUIT:
                 running = False
 
-            # ====== MAIN MENU ======
-            if screen_mode == SCREEN_MENU:
+            # ========== USERNAME ==========
+            if screen_mode == SCREEN_USERNAME:
+                if e.type == pygame.KEYDOWN:
+                    if e.key == pygame.K_RETURN:
+                        if username.strip():
+                            screen_mode = SCREEN_MENU
+                    elif e.key == pygame.K_BACKSPACE:
+                        username = username[:-1]
+                    else:
+                        if e.unicode.isalnum() or e.unicode in ("_", "-"):
+                            username += e.unicode
+
+            # ========== MAIN MENU ==========
+            elif screen_mode == SCREEN_MENU:
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     mx, my = e.pos
                     # Host
@@ -230,9 +273,9 @@ def main():
                     if 200 <= mx <= 520 and 340 <= my <= 400:
                         screen_mode = SCREEN_IP_INPUT
                         ip_text = ""
-                        ip_active = True  # auto-focus
+                        ip_active = True
 
-            # ====== HOST CHOICE ======
+            # ========== HOST CHOICE ==========
             elif screen_mode == SCREEN_HOST_CHOICE:
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     screen_mode = SCREEN_MENU
@@ -242,24 +285,35 @@ def main():
                         screen_mode = SCREEN_MENU
                     # 2 players
                     elif 200 <= mx <= 520 and 250 <= my <= 310:
+                        host_required_players = 2
                         start_server_in_thread(2)
                         client_state = ClientState()
                         try:
-                            client_socket = connect_to_server("127.0.0.1", PORT, client_state)
-                            screen_mode = SCREEN_GAME
+                            client_socket = connect_to_server("127.0.0.1", PORT, client_state, username)
+                            # figure out our IP and show lobby
+                            host_local_ip = get_local_ip()
+                            screen_mode = SCREEN_HOST_LOBBY
                         except OSError:
                             screen_mode = SCREEN_MENU
                     # 3 players
                     elif 200 <= mx <= 520 and 340 <= my <= 400:
+                        host_required_players = 3
                         start_server_in_thread(3)
                         client_state = ClientState()
                         try:
-                            client_socket = connect_to_server("127.0.0.1", PORT, client_state)
-                            screen_mode = SCREEN_GAME
+                            client_socket = connect_to_server("127.0.0.1", PORT, client_state, username)
+                            host_local_ip = get_local_ip()
+                            screen_mode = SCREEN_HOST_LOBBY
                         except OSError:
                             screen_mode = SCREEN_MENU
 
-            # ====== IP INPUT ======
+            # ========== HOST LOBBY ==========
+            elif screen_mode == SCREEN_HOST_LOBBY:
+                # host shouldn't go back once server is up (keeps simple)
+                # but we could add ESC to quit if you want
+                pass
+
+            # ========== IP INPUT (JOIN) ==========
             elif screen_mode == SCREEN_IP_INPUT:
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     mx, my = e.pos
@@ -270,35 +324,28 @@ def main():
                         ip_active = True
                     else:
                         ip_active = False
-
                 elif e.type == pygame.KEYDOWN:
-                    # ESC → back
                     if e.key == pygame.K_ESCAPE:
                         screen_mode = SCREEN_MENU
                         ip_active = False
                     elif e.key == pygame.K_RETURN:
-                        # try connect with whatever is in ip_text
                         target_ip = ip_text.strip()
                         if target_ip:
                             client_state = ClientState()
                             try:
-                                client_socket = connect_to_server(target_ip, PORT, client_state)
+                                client_socket = connect_to_server(target_ip, PORT, client_state, username)
                                 screen_mode = SCREEN_GAME
                                 ip_active = False
                             except OSError:
-                                # failed → stay here
                                 ip_text = ""
                                 ip_active = True
+                    elif e.key == pygame.K_BACKSPACE:
+                        ip_text = ip_text[:-1]
                     else:
-                        # we always accept typing on this screen, to make it forgiving
-                        if e.key == pygame.K_BACKSPACE:
-                            ip_text = ip_text[:-1]
-                        else:
-                            # allow numbers, dot, colon (in case)
-                            if e.unicode.isdigit() or e.unicode in (".", ":"):
-                                ip_text += e.unicode
+                        if e.unicode.isdigit() or e.unicode in (".", ":"):
+                            ip_text += e.unicode
 
-            # ====== GAME ======
+            # ========== GAME ==========
             elif screen_mode == SCREEN_GAME:
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and client_state.board:
                     if client_state.you_are in ("X", "O", "Z") and client_state.connected_players >= client_state.required_players:
@@ -310,10 +357,19 @@ def main():
                         else:
                             client_state.last_error = "You are a spectator"
 
-        # ===== DRAW =====
-        if screen_mode == SCREEN_MENU:
+        # ================= DRAW =================
+        if screen_mode == SCREEN_USERNAME:
             screen.fill((230, 230, 230))
-            draw_text(screen, "Ultimate Tic Tac Toe", 48, (0, 0, 0), (WIDTH // 2, 120))
+            draw_text(screen, "Enter username", 40, (0, 0, 0), (WIDTH // 2, 120))
+            pygame.draw.rect(screen, (255, 255, 255), USERNAME_BOX_RECT)
+            pygame.draw.rect(screen, (0, 120, 0), USERNAME_BOX_RECT, 2)
+            draw_text(screen, username, 30, (0, 0, 0), (WIDTH // 2, 275))
+            draw_text(screen, "Press Enter (cannot be empty)", 20, (0, 0, 0), (WIDTH // 2, 330))
+
+        elif screen_mode == SCREEN_MENU:
+            screen.fill((230, 230, 230))
+            draw_text(screen, f"Hi {username}", 26, (0, 0, 0), (WIDTH // 2, 70))
+            draw_text(screen, "Ultimate Tic Tac Toe", 48, (0, 0, 0), (WIDTH // 2, 130))
 
             pygame.draw.rect(screen, (200, 200, 255), (200, 250, 320, 60))
             draw_text(screen, "Host a game", 30, (0, 0, 80), (WIDTH // 2, 280))
@@ -332,42 +388,74 @@ def main():
             pygame.draw.rect(screen, (200, 200, 255), (200, 340, 320, 60))
             draw_text(screen, "3 players", 30, (0, 0, 80), (WIDTH // 2, 370))
 
+        elif screen_mode == SCREEN_HOST_LOBBY:
+            screen.fill((230, 230, 230))
+            draw_text(screen, "Hosting game", 40, (0, 0, 0), (WIDTH // 2, 70))
+            draw_text(screen, f"Give this IP to other players:", 24, (0, 0, 0), (WIDTH // 2, 130))
+            draw_text(screen, host_local_ip, 34, (0, 80, 0), (WIDTH // 2, 170))
+
+            # show lobby status
+            draw_text(screen,
+                      f"Players: {client_state.connected_players}/{client_state.required_players}",
+                      26, (0, 0, 0), (WIDTH // 2, 230))
+
+            # list names
+            y = 280
+            for mark in ("X", "O", "Z"):
+                if mark in client_state.player_names:
+                    draw_text(screen,
+                              f"{mark}: {client_state.player_names[mark]}",
+                              22,
+                              (0, 0, 0),
+                              (WIDTH // 2, y))
+                    y += 28
+
+            # once lobby is full -> go into game
+            if client_state.connected_players >= client_state.required_players:
+                # show the board next frame
+                screen_mode = SCREEN_GAME
+
         elif screen_mode == SCREEN_IP_INPUT:
             screen.fill((230, 230, 230))
             draw_text(screen, "Enter host IP", 40, (0, 0, 0), (WIDTH // 2, 120))
-
             draw_back_button(screen)
 
-            # input box
             pygame.draw.rect(screen, (255, 255, 255), IP_BOX_RECT)
-            border_color = (0, 120, 0) if ip_active else (120, 120, 120)
-            pygame.draw.rect(screen, border_color, IP_BOX_RECT, 2)
+            pygame.draw.rect(screen, (0, 120, 0) if ip_active else (120, 120, 120), IP_BOX_RECT, 2)
 
-            # text
             font = pygame.font.SysFont(None, 30)
-            txt_surf = font.render(ip_text, True, (0, 0, 0))
-            screen.blit(txt_surf, (IP_BOX_RECT.x + 8, IP_BOX_RECT.y + 12))
+            txt = font.render(ip_text, True, (0, 0, 0))
+            screen.blit(txt, (IP_BOX_RECT.x + 8, IP_BOX_RECT.y + 12))
 
             # caret
             if ip_active:
-                caret_x = IP_BOX_RECT.x + 8 + txt_surf.get_width() + 2
-                caret_y1 = IP_BOX_RECT.y + 8
-                caret_y2 = IP_BOX_RECT.y + IP_BOX_RECT.height - 8
-                pygame.draw.line(screen, (0, 120, 0), (caret_x, caret_y1), (caret_x, caret_y2), 2)
+                caret_x = IP_BOX_RECT.x + 8 + txt.get_width() + 2
+                pygame.draw.line(screen, (0, 120, 0),
+                                 (caret_x, IP_BOX_RECT.y + 8),
+                                 (caret_x, IP_BOX_RECT.y + IP_BOX_RECT.height - 8), 2)
 
-            draw_text(
-                screen,
-                "Type IP, press Enter to connect, ESC/Back to cancel",
-                18,
-                (0, 0, 0),
-                (WIDTH // 2, 340),
-            )
+            draw_text(screen, "Type IP, press Enter, ESC/Back to cancel", 18, (0, 0, 0), (WIDTH // 2, 340))
 
         elif screen_mode == SCREEN_GAME:
             draw_board(screen, client_state)
             role = client_state.you_are or "?"
-            info = f"You: {role} | Turn: {client_state.turn} | {client_state.connected_players}/{client_state.required_players}"
-            draw_text(screen, info, 22, (0, 0, 0), (WIDTH // 2, 12))
+            your_name = client_state.player_names.get(role, "")
+            label = f"You: {your_name} ({role})" if your_name else f"You: ({role})"
+            info = f"{label} | Turn: {client_state.turn} | {client_state.connected_players}/{client_state.required_players}"
+            draw_text(screen, info, 20, (0, 0, 0), (WIDTH // 2, 14))
+
+            # other players
+            xname = client_state.player_names.get("X", "")
+            oname = client_state.player_names.get("O", "")
+            zname = client_state.player_names.get("Z", "")
+            y = 40
+            if xname:
+                draw_text(screen, f"X: {xname}", 18, X_COLOR, (80, y)); y += 22
+            if oname:
+                draw_text(screen, f"O: {oname}", 18, O_COLOR, (80, y)); y += 22
+            if zname:
+                draw_text(screen, f"Z: {zname}", 18, Z_COLOR, (80, y)); y += 22
+
             if client_state.last_error:
                 draw_text(screen, client_state.last_error, 20, (160, 0, 0), (WIDTH // 2, HEIGHT - 20))
 
