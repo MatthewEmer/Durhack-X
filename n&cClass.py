@@ -76,5 +76,3 @@ class ult_nAndc:
             return True
         if self.getElem(x,y - 1) == a:
             return True
-
-
