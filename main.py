@@ -1,19 +1,17 @@
 import pygame
 
-SCREEN_DIMENSIONS = (600, 600)
-
 
 # Pygame Setup
 pygame.init()
 
-screen = pygame.display.set_mode(SCREEN_DIMENSIONS) # Screen
+screen = pygame.display.set_mode((600, 600)) # Screen
+screen.fill((255, 255, 255))
 
 pygame.display.set_caption("Ultimate Tic-Tac-Toe") # Game Name
 
 pygameIcon = pygame.image.load("Images/logo.png") # Logo
 pygame.display.set_icon(pygameIcon)
 
-screen.fill((255, 255, 255))
 pygame.display.flip()
 #
 
@@ -22,22 +20,18 @@ pygame.display.flip()
 ovalIcon = pygame.image.load("Images/ovalThing.png")
 tearIcon = pygame.image.load("Images/tearThing.png")
 circleSquareIcon = pygame.image.load("Images/circleSquareThing.png")
+board = pygame.image.load("Images/emptyBoard.png")
+
 smallIcons = ["BLANK CELL", pygame.transform.scale(ovalIcon, (45, 45)), pygame.transform.scale(tearIcon, (45, 45)), pygame.transform.scale(circleSquareIcon, (45, 45))]
 largeIcons = ["BLANK CELL", pygame.transform.scale(ovalIcon, (150, 150)), pygame.transform.scale(tearIcon, (150, 150)), pygame.transform.scale(circleSquareIcon, (150, 150))]
 
-board = pygame.image.load("Images/emptyBoard.png")
 smallBoard = pygame.transform.scale(board, (170, 170))
 largeBoard = pygame.transform.scale(board, (600, 600))
-#
 
-
-# Greying Out Boards
 boardCovers = []
-
 for i in range(9):
     boardCover = pygame.Surface((175, 175), pygame.SRCALPHA)
     boardCover.fill((0, 0, 0, 50))
-
     boardCovers.append(boardCover)
 #
 
