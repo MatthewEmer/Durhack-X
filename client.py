@@ -18,7 +18,7 @@ FORCE_COLOR = (220, 220, 140)
 # IMPORTANT:
 # on Laptop A (Windows): set this to "127.0.0.1"
 # on Laptop B (Mac): set this to the Windows IP, e.g. "10.54.99.254"
-HOST = "127.0.0.1"
+HOST = "10.54.99.254"
 PORT = 8765
 
 def send(sock, payload: Dict):
