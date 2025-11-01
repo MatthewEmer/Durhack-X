@@ -172,7 +172,7 @@ class Big_Board(Board):
 
 # Pygame Logic
 def GetAction(keyPressEvent):
-    if keyPressEvent.key == pygame.K_ESC:
+    if keyPressEvent.key == pygame.K_ESCAPE:
         return "escape"
 #
 
@@ -211,7 +211,7 @@ while not gameOver:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             gameOver = True
-            
+
         if event.type == pygame.KEYDOWN:
             action = GetAction(event)
 
