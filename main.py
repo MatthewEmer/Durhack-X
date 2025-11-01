@@ -19,11 +19,41 @@ pygame.display.flip()
 
 
 # Graphics Resources
-pieceIcons = [pygame.image.load("Images/ovalThing.png"), pygame.image.load("Images/tearThing.png"), pygame.image.load("Images/circleSquareThing.png")]
+pieceIcons = ["BLANK CELL", pygame.image.load("Images/ovalThing.png"), pygame.image.load("Images/tearThing.png"), pygame.image.load("Images/circleSquareThing.png")]
 
 board = pygame.image.load("Images/emptyBoard.png")
 smallBoard = pygame.transform.scale(board, (170, 170))
 largeBoard = pygame.transform.scale(board, (600, 600))
+#
+
+
+# Game Logic
+class Small_Board:
+    def __init__(self, icon, x, y):
+        self.icon = icon
+        self.cells = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+        self.x = x
+        self.y = y
+
+    def Display(self):
+        screen.blit(self.icon, (self.x, self.y))
+#
+
+
+# Game Setup
+boardTL = Small_Board(smallBoard, 10, 15)
+boardTM = Small_Board(smallBoard, 215, 15)
+boardTR = Small_Board(smallBoard, 420, 15)
+
+boardML = Small_Board(smallBoard, 10, 215)
+boardMM = Small_Board(smallBoard, 215, 215)
+boardMR = Small_Board(smallBoard, 420, 215)
+
+boardBL = Small_Board(smallBoard, 10, 420)
+boardBM = Small_Board(smallBoard, 215, 420)
+boardBR = Small_Board(smallBoard, 420, 420)
+
+boards = [boardTL, boardTM, boardTR, boardML, boardMM, boardMR, boardBL, boardBM, boardBR]
 #
 
 
@@ -33,17 +63,8 @@ while (not gameOver):
     # Graphics Placements
     screen.blit(largeBoard, (0, 0))
 
-    screen.blit(smallBoard, (10, 15)) # Top-Left
-    screen.blit(smallBoard, (215, 15)) # Top-Middle
-    screen.blit(smallBoard, (420, 15)) # Top-Right
-
-    screen.blit(smallBoard, (10, 215)) # Middle-Left
-    screen.blit(smallBoard, (215, 215)) # Middle-Middle
-    screen.blit(smallBoard, (420, 215)) # Middle-Right
-
-    screen.blit(smallBoard, (10, 420)) # Bottom-Left
-    screen.blit(smallBoard, (215, 420)) # Bottom-Middle
-    screen.blit(smallBoard, (420, 420)) # Bottom-Right
+    for board in boards:
+        board.Display()
     #
 
 
