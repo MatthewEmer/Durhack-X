@@ -14,7 +14,7 @@ X_COLOR = (40, 40, 200)
 O_COLOR = (200, 40, 40)
 FORCE_COLOR = (220, 220, 140)
 
-HOST = "10.247.14.144"   # change to server IP or ngrok host
+HOST = "127.0.0.1"   # change to server IP or ngrok host
 PORT = 8765
 
 def send(sock, payload: Dict):
