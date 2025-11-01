@@ -19,7 +19,10 @@ pygame.display.flip()
 
 
 # Graphics Resources
-pieceIcons = ["BLANK CELL", pygame.image.load("Images/ovalThing.png"), pygame.image.load("Images/tearThing.png"), pygame.image.load("Images/circleSquareThing.png")]
+ovalIcon = pygame.image.load("Images/ovalThing.png")
+tearIcon = pygame.image.load("Images/tearThing.png")
+circleSquareIcon = pygame.image.load("Images/circleSquareThing.png")
+pieceIcons = ["BLANK CELL", pygame.transform.scale(ovalIcon, (45, 45)), pygame.transform.scale(tearIcon, (45, 45)), pygame.transform.scale(circleSquareIcon, (45, 45))]
 
 board = pygame.image.load("Images/emptyBoard.png")
 smallBoard = pygame.transform.scale(board, (170, 170))
@@ -31,12 +34,21 @@ largeBoard = pygame.transform.scale(board, (600, 600))
 class Small_Board:
     def __init__(self, icon, x, y):
         self.icon = icon
-        self.cells = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+        self.cells = [0, 2, 0, 1, 0, 0, 3, 2, 0]
         self.x = x
         self.y = y
 
-    def Display(self):
-        screen.blit(self.icon, (self.x, self.y))
+    def Display(self, cellIcons):
+        screen.blit(self.icon, (self.x, self.y)) # Draws the board
+
+        cellShifts = [[2.8, 4.2], [62.5, 4.2], [122.2, 4.2], [2.8, 62.5], [62.5, 62.5], [122.2, 62.5], [2.8, 122.2], [62.5, 122.2], [122.2, 122.2]]
+        for cellIndex in range(9):
+            cellIcon = cellIcons[self.cells[cellIndex]]
+
+            if cellIcon == "BLANK CELL":
+                continue
+
+            screen.blit(cellIcon, (self.x + cellShifts[cellIndex][0], self.y + cellShifts[cellIndex][1])) # Draws the icons
 #
 
 
@@ -64,7 +76,7 @@ while (not gameOver):
     screen.blit(largeBoard, (0, 0))
 
     for board in boards:
-        board.Display()
+        board.Display(pieceIcons)
     #
 
 
