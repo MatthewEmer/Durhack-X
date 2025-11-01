@@ -12,6 +12,8 @@ pygame.display.set_caption("Ultimate Tic-Tac-Toe") # Game Name
 pygameIcon = pygame.image.load("Images/logo.png") # Logo
 pygame.display.set_icon(pygameIcon)
 
+cursor = pygame.SYSTEM_CURSOR_HAND
+
 pygame.display.flip()
 #
 
@@ -37,6 +39,9 @@ for i in range(9):
 
 
 # Game Logic
+player = 1
+selectedBoard = -1
+
 class Board:
     def __init__(self, icon, x = 0, y = 0, cover=""):
         self.__icon = icon
@@ -66,7 +71,7 @@ class Board:
     
 
     def SetCell(self, x, y, player):
-        if self._BoardGetCell(x, y) == 0:
+        if Board.GetCell(self, x, y) == 0:
             self._Board__cells[(x % 3) + 3 * (y % 3)] = player
             self._BoardCheckClear()
     #
@@ -82,6 +87,10 @@ class Board:
 
 class Small_Board(Board):
     # Getters and Setters
+    def GetCover(self):
+        return self._Board__covered
+
+
     def SetCover(self, covered):
         self._Board__covered = covered
     #
@@ -120,20 +129,39 @@ class Small_Board(Board):
         if self._Board__filledCells < 3: 
             return
         
-        if self._BoardGetCell(x + 1, y) == player and self._BoardGetCell(x - 1, y) == player: # Checks Row
-            self._BoardSetWinner(player)
+        if Board.GetCell(self, x + 1, y) == player and Board.GetCell(self, x - 1, y) == player: # Checks Row
+            Board.SetWinner(self, player)
             return True
-        elif self._BoardGetCell(x, y + 1) == player and self._BoardGetCell(x, y - 1) == player: # Checks Column
-            self._BoardSetWinner(player)
+        elif Board.GetCell(self, x, y + 1) == player and Board.GetCell(self, x, y - 1) == player: # Checks Column
+            Board.SetWinner(self, player)
             return True
-        elif self._BoardGetCell(x + 1, y + 1) == player and self._BoardGetCell(x - 1, y - 1) == player: # Checks Diagonal 1
-            self._BoardSetWinner(player)
+        elif Board.GetCell(self, x + 1, y + 1) == player and Board.GetCell(self, x - 1, y - 1) == player: # Checks Diagonal 1
+            Board.SetWinner(self, player)
             return True
-        elif self._BoardGetCell(x - 1, y + 1) == player and self._BoardGetCell(x + 1, y - 1) == player: # Checks Diagonal 2
-            self._BoardSetWinner(player)
+        elif Board.GetCell(self, x - 1, y + 1) == player and Board.GetCell(self, x + 1, y - 1) == player: # Checks Diagonal 2
+            Board.SetWinner(self, player)
             return True
         
         return False
+    
+    def Pressed(self, x, y, player):
+        if self._Board__winner != 0:
+            return -1
+        
+        cellShifts = [[2.8, 4.2], [62.5, 4.2], [122.2, 4.2], [2.8, 62.5], [62.5, 62.5], [122.2, 62.5], [2.8, 122.2], [62.5, 122.2], [122.2, 122.2]]
+        cellSize = 45
+
+        for i in range(9):
+            cellStartX = self._Board__x + cellShifts[i][0]
+            cellStartY = self._Board__y + cellShifts[i][1]
+
+            if x >= cellStartX and x <= cellStartX + cellSize and y >= cellStartY and y <= cellStartY + cellSize:
+                self._Board__cells[i] = player
+                self.CheckForClear()
+                self.CheckForWin(i % 3, int(i / 3), player)
+                return i
+        return -1
+
 
 
 class Big_Board(Board):
@@ -142,27 +170,27 @@ class Big_Board(Board):
             return
         
         # Checks Rows
-        if x != 2 and self._BoardGetCell(x + 1, y) == player:
+        if x != 2 and Board.GetCell(self, x + 1, y) == player:
             return True
-        if x != 0 and self._BoardGetCell(x - 1, y) == player:
+        if x != 0 and Board.GetCell(self, x - 1, y) == player:
             return True
         #
 
         # Checks Columns
-        if y != 2 and self._BoardGetCell(x, y + 1) == player:
+        if y != 2 and Board.GetCell(self, x, y + 1) == player:
             return True
-        if y != 0 and self._BoardGetCell(x, y - 1) == player:
+        if y != 0 and Board.GetCell(self, x, y - 1) == player:
             return True
         #
 
         # Checks Diagonals 
-        if x != 2 and y != 2 and self._BoardGetCell(x + 1, y + 1) == player:
+        if x != 2 and y != 2 and Board.GetCell(self, x + 1, y + 1) == player:
             return True
-        if x != 0 and y != 0 and self._BoardGetCell(x - 1, y - 1) == player:
+        if x != 0 and y != 0 and Board.GetCell(self, x - 1, y - 1) == player:
             return True
-        if x != 2 and y != 0 and self._BoardGetCell(x + 1, y - 1) == player:
+        if x != 2 and y != 0 and Board.GetCell(self, x + 1, y - 1) == player:
             return True
-        if x != 0 and y != 2 and self._BoardGetCell(x - 1, y + 1) == player:
+        if x != 0 and y != 2 and Board.GetCell(self, x - 1, y + 1) == player:
             return True
         #
         
@@ -171,9 +199,33 @@ class Big_Board(Board):
 
 
 # Pygame Logic
-def GetAction(keyPressEvent):
+def GetKey(keyPressEvent):
     if keyPressEvent.key == pygame.K_ESCAPE:
         return "escape"
+    
+
+def Press(mousePressEvent, boards, player):
+    pressLocation = mousePressEvent.pos
+    pressX, pressY = pressLocation[0], pressLocation[1]
+    rowIndex, columnIndex = 0, 0
+
+    if pressX < 215:
+        columnIndex = 0
+    elif pressX < 420: 
+        columnIndex = 1
+    else: 
+        columnIndex = 2
+
+    if pressY < 215:
+        rowIndex = 0
+    elif pressY < 420: 
+        rowIndex = 1
+    else: 
+        rowIndex = 2
+
+    board = boards[rowIndex * 3 + columnIndex]
+
+    return board.Pressed(pressX, pressY, player)
 #
 
 
@@ -198,6 +250,7 @@ boards = [boardTL, boardTM, boardTR, boardML, boardMM, boardMR, boardBL, boardBM
 
 # Main Game Loop
 gameOver = False
+
 while not gameOver:
     # Graphics Placements
     mainBoard.Display()
@@ -211,12 +264,27 @@ while not gameOver:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             gameOver = True
-
-        if event.type == pygame.KEYDOWN:
-            action = GetAction(event)
-
+        elif event.type == pygame.KEYDOWN:
+            action = GetKey(event)
             if action == "escape":
                 gameOver = True
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            selectedBoard = Press(event, boards, player)
+            
+            # Updating the board for the next turn
+            if player == 3:
+                player = 1
+            else:
+                player += 1
+
+            if selectedBoard != -1:
+                for i in range(9):
+                    if i != selectedBoard:
+                        boards[i].SetCover(True)
+                    else:
+                        boards[i].SetCover(False)
+            #
+            
     #
 
     pygame.display.flip() # Update the screen
