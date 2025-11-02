@@ -120,7 +120,6 @@ class ClientState:
             self.connected_players = msg.get("connected_players", self.connected_players)
             self.player_names = msg.get("player_names", self.player_names)
             self.spectator_names = msg.get("spectator_names", self.spectator_names)
-            # board.serialize already includes win_rule
             self.win_rule = msg.get("win_rule", self.win_rule)
             self.last_error = None
         elif t == "error":
@@ -224,12 +223,12 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
                 t = font_small.render(val, True, COLOR_TEXT)
                 screen.blit(t, t.get_rect(center=(xpix + small // 2, ypix + small // 2)))
 
-    # 3) big icons for decided boards (but NOT for ties now — ties in 3p get cleared server-side)
+    # 3) big icons for decided boards (but NOT for ties now — ties may be cleared in 3p mode)
     for b, winner in enumerate(grid_winners):
         if not winner:
             continue
         if winner == "T":
-            # in 2p we might still see T; just leave white
+            # leave as white
             continue
         bx = (b % 3) * cell
         by = TOP_BAR + (b // 3) * cell
@@ -260,24 +259,36 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
         screen.blit(overlay, (fx, fy))
         pygame.draw.rect(screen, (148, 163, 184), (fx, fy, cell, cell), 4, border_radius=6)
 
-    # 5) game over banner
+    # 5) big GAME OVER overlay
     macro_winner = st.board.get("macro_winner", "")
     macro_tied = st.board.get("macro_tied", False)
     if macro_winner or macro_tied:
-        bar_h = 80
-        banner = pygame.Surface((WIDTH, bar_h))
+        # darken entire screen
+        dim = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        dim.fill((7, 11, 17, 200))  # dark bluish, 200 alpha
+        screen.blit(dim, (0, 0))
+
         if macro_winner:
-            banner.fill((13, 148, 136))
-            msg = f"GAME OVER ({st.win_rule}): {macro_winner} wins!"
-            txt_color = (241, 245, 249)
+            # try to resolve name
+            winner_mark = macro_winner
+            winner_name = st.player_names.get(winner_mark, "")
+            if winner_name:
+                msg = f"PLAYER {winner_name} ({winner_mark}) WINS!"
+            else:
+                msg = f"PLAYER {winner_mark} WINS!"
+            colour = (239, 246, 255)
         else:
-            banner.fill((148, 163, 184))
-            msg = f"GAME OVER ({st.win_rule}): Draw"
-            txt_color = (15, 23, 42)
-        screen.blit(banner, (0, HEIGHT - bar_h))
-        font_big = pygame.font.SysFont("Segoe UI", 28, bold=True)
-        txt = font_big.render(msg, True, txt_color)
-        screen.blit(txt, txt.get_rect(center=(WIDTH // 2, HEIGHT - bar_h // 2)))
+            msg = "DRAW!"
+            colour = (239, 246, 255)
+
+        big_font = pygame.font.SysFont("Segoe UI", 56, bold=True)
+        text_surf = big_font.render(msg, True, colour)
+        screen.blit(text_surf, text_surf.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 10)))
+
+        if st.win_rule:
+            smallf = pygame.font.SysFont("Segoe UI", 22)
+            rule_surf = smallf.render(st.win_rule, True, (203, 213, 225))
+            screen.blit(rule_surf, rule_surf.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 40)))
 
 
 def pixel_to_move(mx, my) -> Tuple[int, int]:
