@@ -178,7 +178,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
 
     grid_winners = st.board.get("grid_winners", [""] * 9)
 
-    # base boards
+    # base grids
     for b in range(9):
         bx = (b % 3) * cell
         by = TOP_BAR + (b // 3) * cell
@@ -248,7 +248,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
             t = font_small.render(winner, True, (15, 23, 42))
             screen.blit(t, t.get_rect(center=(center_x, center_y)))
 
-    # forced
+    # forced highlight
     forced = st.board["next_forced"]
     if isinstance(forced, int) and forced >= 0:
         fx = (forced % 3) * cell
@@ -269,10 +269,10 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
         if macro_winner:
             winner_mark = macro_winner
             winner_name = st.player_names.get(winner_mark, "")
-
-            msg = f"{winner_name.upper()} WINS!"
-
-            colour = (239, 246, 255)
+            if winner_name:
+                msg = f"{winner_name} ({winner_mark}) WINS!"
+            else:
+                msg = f"{winner_mark} WINS!"
         else:
             msg = "DRAW!"
 
@@ -333,12 +333,12 @@ def main():
     client_socket: Optional[socket.socket] = None
     client_state = ClientState()
     host_local_ip = "127.0.0.1"
-    i_am_host = False  # <--- important
+    i_am_host = False
+
+    # used ONLY when game is over to detect HOME
+    pending_home_click: Optional[Tuple[int, int]] = None
 
     running = True
-    # we'll store a click to process after draw
-    pending_click: Optional[Tuple[int, int]] = None
-
     while running:
         # if server told us to shutdown, go home
         if client_state.disconnected:
@@ -355,7 +355,7 @@ def main():
             if e.type == pygame.QUIT:
                 running = False
 
-            # USERNAME
+            # USERNAME SCREEN
             if screen_mode == SCREEN_USERNAME:
                 if e.type == pygame.KEYDOWN:
                     if e.key == pygame.K_RETURN and username.strip():
@@ -436,12 +436,28 @@ def main():
                         if e.unicode.isdigit() or e.unicode in (".", ":"):
                             ip_text += e.unicode
 
-            # GAME (just record clicks here, we'll handle after draw)
+            # GAME
             elif screen_mode == SCREEN_GAME:
-                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                    pending_click = e.pos
+                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and client_state.board:
+                    macro_winner = client_state.board.get("macro_winner", "")
+                    macro_tied = client_state.board.get("macro_tied", False)
 
-        # ------------------ DRAW ------------------
+                    # if game is over -> store click to check home after draw
+                    if macro_winner or macro_tied:
+                        pending_home_click = e.pos
+                    else:
+                        # normal move
+                        if client_state.you_are in ("X", "O", "Z") and client_state.connected_players >= client_state.required_players:
+                            big, small = pixel_to_move(*e.pos)
+                            if big != -1 and small != -1:
+                                send(client_socket, {"type": "move", "big": big, "small": small})
+                        else:
+                            if client_state.connected_players < client_state.required_players:
+                                client_state.last_error = "Waiting for players..."
+                            else:
+                                client_state.last_error = "You are a spectator"
+
+        # ---------------- DRAW ----------------
         home_button_rect = None
 
         if screen_mode == SCREEN_USERNAME:
@@ -508,7 +524,6 @@ def main():
                 COLOR_TEXT,
             )
             screen.blit(status, (110, 230))
-
             y = 270
             for mark in ("X", "O", "Z"):
                 if mark in client_state.player_names:
@@ -537,25 +552,23 @@ def main():
                 err = font_small.render(client_state.last_error, True, (248, 113, 113))
                 screen.blit(err, (12, HEIGHT - 100))
 
-        # ---------- process pending click on home (after draw) ----------
-        if screen_mode == SCREEN_GAME and pending_click and home_button_rect:
-            mx, my = pending_click
-            if home_button_rect.collidepoint(mx, my):
-                # host: tell server to shutdown everyone
-                if i_am_host:
-                    send(client_socket, {"type": "shutdown"})
-                    # we'll get "shutdown" back from server too, but we can go home now
-                # in all cases, drop our socket and go home
-                if client_socket:
-                    try:
-                        client_socket.close()
-                    except:
-                        pass
-                client_socket = None
-                client_state = ClientState()
-                screen_mode = SCREEN_MENU
-
-            pending_click = None  # consume it
+            # if we had a click when game over, check home
+            if pending_home_click and home_button_rect:
+                mx, my = pending_home_click
+                if home_button_rect.collidepoint(mx, my):
+                    # host nukes room
+                    if i_am_host:
+                        send(client_socket, {"type": "shutdown"})
+                    # drop local socket
+                    if client_socket:
+                        try:
+                            client_socket.close()
+                        except:
+                            pass
+                    client_socket = None
+                    client_state = ClientState()
+                    screen_mode = SCREEN_MENU
+                pending_home_click = None
 
         pygame.display.flip()
         clock.tick(60)
