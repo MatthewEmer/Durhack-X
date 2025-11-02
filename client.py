@@ -476,7 +476,7 @@ def main():
             screen.fill(COLOR_BG)
             pygame.draw.rect(screen, (15, 23, 42), (0, 0, WIDTH, 90))
             pygame.draw.line(screen, (30, 41, 59), (0, 90), (WIDTH, 90), 1)
-            title = font_title.render("Ultimate Noughts and Crosses", True, COLOR_TEXT)
+            title = font_title.render("Ultimate Tic-Tac-Toe", True, COLOR_TEXT)
             screen.blit(title, title.get_rect(center=(WIDTH // 2, 45)))
             hello = font_small.render(f"Hi {username}", True, COLOR_MUTED)
             screen.blit(hello, (20, 15))
