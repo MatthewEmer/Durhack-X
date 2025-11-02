@@ -41,15 +41,23 @@ class GameServer:
     players: X,O,(Z)
     late joiners -> spectators
 
-    GAME RULE (2025-11-02):
-    - macro win when a player owns 2 adjacent small boards (see common.py)
+    3 players:
+        - we enable "reset_on_tie" on the board, so tied small boards are wiped
     """
     def __init__(self, required_players: int = 2):
         assert required_players in (2, 3)
         self.required_players = required_players
         self.player_order: List[str] = ["X", "O"] if required_players == 2 else ["X", "O", "Z"]
 
-        self.board = UltimateBoard()
+        # board logic: 3-player → recycle tied small boards
+        win_rule = "adjacent-2"
+        if required_players == 3:
+            win_rule = "adjacent-2 + reset-on-tie"
+        self.board = UltimateBoard(
+            reset_on_tie=(required_players == 3),
+            win_rule=win_rule,
+        )
+
         self.lock = threading.Lock()
 
         # mark -> socket
@@ -81,8 +89,8 @@ class GameServer:
             "players": list(self.players.keys()),
             "player_names": self.player_names,
             "spectator_names": list(self.spectator_names.values()),
-            # tell clients what rule we are using
-            "win_rule": "adjacent-2",
+            # pass rule down to client explicitly too
+            "win_rule": self.board.win_rule,
         }
 
         # players
@@ -93,7 +101,6 @@ class GameServer:
             except OSError:
                 dead_players.append(mark)
         for mark in dead_players:
-            # drop name too
             if mark in self.player_names:
                 del self.player_names[mark]
             del self.players[mark]
@@ -119,7 +126,7 @@ class GameServer:
             "connected_players": len(self.players),
             "player_names": self.player_names,
             "spectator_names": list(self.spectator_names.values()),
-            "win_rule": "adjacent-2",
+            "win_rule": self.board.win_rule,
         })
         self.broadcast_state()
 
@@ -131,7 +138,7 @@ class GameServer:
 
                 mtype = msg.get("type")
 
-                # client introduces themselves
+                # hello
                 if mtype == "hello":
                     name = msg.get("name", "").strip()
                     if role in self.player_order:
@@ -143,6 +150,7 @@ class GameServer:
                     self.broadcast_state()
                     continue
 
+                # move
                 if mtype == "move":
                     if role not in self.player_order:
                         send(sock, {"type": "error", "message": "You are a spectator"})
@@ -183,7 +191,6 @@ class GameServer:
             client, addr = server_sock.accept()
             print(f"[SERVER] connection from {addr}")
 
-            # choose role
             if len(self.players) < self.required_players:
                 role = self.player_order[len(self.players)]
                 self.players[role] = client
@@ -206,6 +213,5 @@ class GameServer:
 
 
 if __name__ == "__main__":
-    # default run for testing
     gs = GameServer(2)
     gs.run()
