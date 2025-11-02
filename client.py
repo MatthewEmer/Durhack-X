@@ -269,10 +269,9 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
         if macro_winner:
             winner_mark = macro_winner
             winner_name = st.player_names.get(winner_mark, "")
-            if winner_name:
-                msg = f"{winner_name} ({winner_mark}) WINS!"
-            else:
-                msg = f"{winner_mark} WINS!"
+
+            msg = f"{winner_name.upper()} WINS!"
+
             colour = (239, 246, 255)
         else:
             msg = "DRAW!"
