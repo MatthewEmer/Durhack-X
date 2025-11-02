@@ -273,6 +273,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
                 msg = f"{winner_name} ({winner_mark}) WINS!"
             else:
                 msg = f"{winner_mark} WINS!"
+            colour = (239, 246, 255)
         else:
             msg = "DRAW!"
 
