@@ -55,6 +55,7 @@ class Board:
         self.__cover = cover
 
         self.__winner = 0
+        self.__gameWinner = 0
 
     
     # Getters and Setters
@@ -119,9 +120,10 @@ class Small_Board(Board):
     def CheckForClear(self):
         self._Board__filledCells += 1
 
+        print(self._Board__filledCells)
+
         if self._Board__filledCells == 9:
-            for cell in self._Board__cells:
-                cell = 0
+            self._Board__cells = [0] * 9
             self._Board__filledCells = 0
 
     
@@ -173,36 +175,48 @@ class Small_Board(Board):
 
 
 class Big_Board(Board):
-    def CheckForWin(self, x, y, player):
-        if self._Board__filledCells < 2:
-            return
-        
+    # Getters and Setters
+    def GetGameWinner(self):
+        return self._Board__gameWinner
+    
+    def SetGameWinner(self, player):
+        self._Board__gameWinner = player
+    #
+    
+
+    def CheckForWin(self, x, y, player):        
         # Checks Rows
         if x != 2 and Board.GetCell(self, x + 1, y) == player:
-            return True
+            self.SetGameWinner(player)
+            return
         if x != 0 and Board.GetCell(self, x - 1, y) == player:
-            return True
+            self.SetGameWinner(player)
+            return
         #
 
         # Checks Columns
         if y != 2 and Board.GetCell(self, x, y + 1) == player:
-            return True
+            self.SetGameWinner(player)
+            return
         if y != 0 and Board.GetCell(self, x, y - 1) == player:
-            return True
+            self.SetGameWinner(player)
+            return
         #
 
         # Checks Diagonals 
         if x != 2 and y != 2 and Board.GetCell(self, x + 1, y + 1) == player:
-            return True
+            self.SetGameWinner(player)
+            return
         if x != 0 and y != 0 and Board.GetCell(self, x - 1, y - 1) == player:
-            return True
+            self.SetGameWinner(player)
+            return
         if x != 2 and y != 0 and Board.GetCell(self, x + 1, y - 1) == player:
-            return True
+            self.SetGameWinner(player)
+            return
         if x != 0 and y != 2 and Board.GetCell(self, x - 1, y + 1) == player:
-            return True
+            self.SetGameWinner(player)
+            return
         #
-        
-        return False
 #
 
 
@@ -212,7 +226,7 @@ def GetKey(keyPressEvent):
         return "escape"
     
 
-def Press(mousePressEvent, boards, player):
+def Press(mousePressEvent, boards, bigBoard, player):
     pressLocation = mousePressEvent.pos
     pressX, pressY = pressLocation[0], pressLocation[1]
     rowIndex, columnIndex = 0, 0
@@ -233,6 +247,9 @@ def Press(mousePressEvent, boards, player):
 
     board = boards[rowIndex * 3 + columnIndex]
 
+    boardIndex = boards.index(board)
+
+    bigBoard.CheckForWin(boardIndex % 3, int(boardIndex / 3), player)
     return board.Pressed(pressX, pressY, player)
 #
 
@@ -277,12 +294,17 @@ while not gameOver:
             if action == "escape":
                 gameOver = True
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            selectedBoard = Press(event, boards, player)
+            selectedBoard = Press(event, boards, mainBoard, player)
             
             # Updating the board for the next turn
             if selectedBoard != -1:
+                if mainBoard.GetGameWinner() != 0:
+                    gameOver = True
+
+                if boards[selectedBoard].GetWinner() != 0:
+                    selectedBoard = -1
                 for i in range(9):
-                    if i != selectedBoard:
+                    if i != selectedBoard and selectedBoard != -1:
                         boards[i].SetCover(True)
                     else:
                         boards[i].SetCover(False)
