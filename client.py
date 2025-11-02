@@ -313,18 +313,21 @@ def pixel_to_move(mx, my) -> Tuple[int, int]:
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Ultimate Noughts and Crosses (custom)")
+
+    board_img = load_image("images/board.png")
+    x_img = load_image("images/circlesquare.png")
+    o_img = load_image("images/oval.png")
+    z_img = load_image("images/tear.png")
+    logo = load_image("images/logo.png")
+
+    pygame.display.set_caption("Ultimate Tic-Tac-Toe")
+    pygame.display.set_icon(logo)
     clock = pygame.time.Clock()
 
     font_title = pygame.font.SysFont("Segoe UI", 42, bold=True)
     font_sub = pygame.font.SysFont("Segoe UI", 26)
     font_body = pygame.font.SysFont("Segoe UI", 22)
     font_small = pygame.font.SysFont("Segoe UI", 18)
-
-    board_img = load_image("images/board.png")
-    x_img = load_image("images/circlesquare.png")
-    o_img = load_image("images/oval.png")
-    z_img = load_image("images/tear.png")
 
     screen_mode = SCREEN_USERNAME
     username = ""
