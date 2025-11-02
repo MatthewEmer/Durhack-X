@@ -14,7 +14,7 @@ from server import GameServer  # local server in a thread if we host
 WIDTH, HEIGHT = 720, 720
 PORT = 8765
 
-TOP_BAR = 50  # <— reserve space at the top for player / turn
+TOP_BAR = 50  # reserved for player / turn at the top
 
 # screens
 SCREEN_USERNAME = "username"
@@ -164,7 +164,7 @@ def draw_input(screen, rect, text, font, placeholder=""):
 
 
 # =========================================================
-# GAME BOARD DRAW (offset so top bar doesn't cover)
+# GAME BOARD DRAW
 # =========================================================
 def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_small):
     screen.fill((15, 23, 42))
@@ -175,13 +175,11 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
         screen.blit(surf, surf.get_rect(center=(WIDTH // 2, HEIGHT // 2)))
         return
 
-    # usable vertical space (under the top bar)
     usable_h = HEIGHT - TOP_BAR
-    # board is 3x3, each is:
     cell = usable_h // 3
     small = cell // 3
 
-    # 1) draw 9 mini boards (starting at y = TOP_BAR)
+    # 1) boards
     for b in range(9):
         bx = (b % 3) * cell
         by = TOP_BAR + (b // 3) * cell
@@ -194,7 +192,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
                 pygame.draw.line(screen, (71, 85, 105), (bx + j * small, by), (bx + j * small, by + cell), 2)
                 pygame.draw.line(screen, (71, 85, 105), (bx, by + j * small), (bx + cell, by + j * small), 2)
 
-    # 2) draw small marks (shrink to 70% and center)
+    # 2) small marks inside non-won boards
     mark_scale = 0.7
     mark_size = int(small * mark_scale)
     for b in range(9):
@@ -222,7 +220,9 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
                 t = font_small.render(val, True, COLOR_TEXT)
                 screen.blit(t, t.get_rect(center=(xpix + small // 2, ypix + small // 2)))
 
-    # 3) overlay claimed / tied small boards
+    # 3) claimed / tied small boards
+    #    -> paint WHITE RECT over the whole cell
+    #    -> draw BIG icon (85% of cell) centered
     grid_winners = st.board.get("grid_winners", [""] * 9)
     for b, winner in enumerate(grid_winners):
         if not winner:
@@ -230,12 +230,10 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
         bx = (b % 3) * cell
         by = TOP_BAR + (b // 3) * cell
 
-        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
-        overlay.fill((15, 23, 42, 170))
-        screen.blit(overlay, (bx, by))
+        # full white cover
+        pygame.draw.rect(screen, (255, 255, 255), (bx, by, cell, cell))
 
-        # big icon 60% of cell
-        big_scale = 0.6
+        big_scale = 0.85
         big_size = int(cell * big_scale)
         center_x = bx + cell // 2
         center_y = by + cell // 2
@@ -250,10 +248,10 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
             bi = pygame.transform.smoothscale(z_img, (big_size, big_size))
             screen.blit(bi, bi.get_rect(center=(center_x, center_y)))
         elif winner == "T":
-            t = font_small.render("T", True, (203, 213, 225))
+            t = font_small.render("T", True, (15, 23, 42))
             screen.blit(t, t.get_rect(center=(center_x, center_y)))
         else:
-            t = font_small.render(winner, True, COLOR_TEXT)
+            t = font_small.render(winner, True, (15, 23, 42))
             screen.blit(t, t.get_rect(center=(center_x, center_y)))
 
     # 4) forced board highlight
@@ -266,7 +264,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
         screen.blit(forced_overlay, (fx, fy))
         pygame.draw.rect(screen, (148, 163, 184), (fx, fy, cell, cell), 4, border_radius=6)
 
-    # 5) game over banner at the bottom
+    # 5) game over banner
     macro_winner = st.board.get("macro_winner", "")
     macro_tied = st.board.get("macro_tied", False)
     if macro_winner or macro_tied:
@@ -287,21 +285,14 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
 
 
 def pixel_to_move(mx, my) -> Tuple[int, int]:
-    """
-    Convert a click to (big_idx, small_idx).
-    Must mirror the drawing math: we started the board at y = TOP_BAR.
-    """
     usable_h = HEIGHT - TOP_BAR
     cell = usable_h // 3
     small = cell // 3
 
-    # if click is in the top bar, ignore
     if my < TOP_BAR:
         return -1, -1
 
-    # shift y down
     my_adj = my - TOP_BAR
-
     big_x = mx // cell
     big_y = my_adj // cell
 
@@ -330,7 +321,6 @@ def main():
     font_body = pygame.font.SysFont("Segoe UI", 22)
     font_small = pygame.font.SysFont("Segoe UI", 18)
 
-    # load images (lowercase)
     board_img = load_image("images/board.png")
     x_img = load_image("images/circlesquare.png")
     o_img = load_image("images/oval.png")
@@ -379,7 +369,6 @@ def main():
                     if pygame.Rect(30, 30, 90, 36).collidepoint(mx, my):
                         screen_mode = SCREEN_MENU
                     elif pygame.Rect(210, 240, 300, 60).collidepoint(mx, my):
-                        # 2 players
                         start_server_in_thread(2)
                         client_state = ClientState()
                         try:
@@ -389,7 +378,6 @@ def main():
                         except OSError:
                             screen_mode = SCREEN_MENU
                     elif pygame.Rect(210, 320, 300, 60).collidepoint(mx, my):
-                        # 3 players
                         start_server_in_thread(3)
                         client_state = ClientState()
                         try:
@@ -494,13 +482,12 @@ def main():
             screen.blit(h1, (100, 60))
             ptxt = font_small.render("Give this IP to the other players:", True, COLOR_MUTED)
             screen.blit(ptxt, (100, 95))
-            # IP card
             ip_rect = pygame.Rect(100, 130, 520, 46)
             pygame.draw.rect(screen, COLOR_INPUT_BG, ip_rect, border_radius=14)
             pygame.draw.rect(screen, COLOR_BORDER, ip_rect, 1, border_radius=14)
             ip_surf = font_body.render(host_local_ip, True, COLOR_TEXT)
             screen.blit(ip_surf, ip_surf.get_rect(center=ip_rect.center))
-            # player status
+
             pygame.draw.rect(screen, COLOR_PANEL, (80, 210, 560, 220), border_radius=18)
             status = font_body.render(
                 f"Players: {client_state.connected_players}/{client_state.required_players}",
@@ -518,10 +505,9 @@ def main():
                 screen_mode = SCREEN_GAME
 
         elif screen_mode == SCREEN_GAME:
-            # draw board (below top bar)
             draw_board(screen, client_state, board_img, x_img, o_img, z_img, font_small)
 
-            # TOP BAR (draw over AFTER board so it stays clean)
+            # top bar
             pygame.draw.rect(screen, (14, 24, 36), (0, 0, WIDTH, TOP_BAR))
             pygame.draw.line(screen, (30, 41, 59), (0, TOP_BAR), (WIDTH, TOP_BAR), 1)
             role = client_state.you_are or "?"
