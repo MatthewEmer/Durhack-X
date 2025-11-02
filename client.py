@@ -285,11 +285,6 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
         text_surf = big_font.render(msg, True, colour)
         screen.blit(text_surf, text_surf.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 10)))
 
-        if st.win_rule:
-            smallf = pygame.font.SysFont("Segoe UI", 22)
-            rule_surf = smallf.render(st.win_rule, True, (203, 213, 225))
-            screen.blit(rule_surf, rule_surf.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 40)))
-
 
 def pixel_to_move(mx, my) -> Tuple[int, int]:
     usable_h = HEIGHT - TOP_BAR
