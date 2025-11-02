@@ -1,6 +1,12 @@
 # Ultimate Tic-Tac-Toe
 Tic-Tac-Toe but two boards deep and three player, all hosted on a local server for multiplayer gameplay.
 
+## To Play
+1. All players should join the same WiFi network (not eduroam or DurStudent).
+2. All players should run the client.py file.
+3. One player should host the game and should select the number of players.
+4. The other players should input the IP address displayed onto the host's screen.
+
 ## Hackathon Report
 ### Inspiration:
 Our inspiration came from Ultimate Tic-Tac-Toe, a game we’d seen played on paper but rarely encountered as an online or digital version. After spending several hours struggling to get a hardware-based project off the ground, we decided to shift our focus toward something we could bring to life more effectively within the hackathon timeframe. Creating a playable digital version of Ultimate Tic-Tac-Toe in Python felt like the perfect challenge - combining familiar game mechanics with our interest in multiplayer interaction and programming.
