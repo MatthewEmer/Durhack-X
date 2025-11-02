@@ -74,7 +74,6 @@ class Board:
     def SetCell(self, x, y, player):
         if Board.GetCell(self, x, y) == 0:
             self._Board__cells[(x % 3) + 3 * (y % 3)] = player
-            self._BoardCheckClear()
     #
 
 
@@ -120,8 +119,6 @@ class Small_Board(Board):
     def CheckForClear(self):
         self._Board__filledCells += 1
 
-        print(self._Board__filledCells)
-
         if self._Board__filledCells == 9:
             self._Board__cells = [0] * 9
             self._Board__filledCells = 0
@@ -151,6 +148,7 @@ class Small_Board(Board):
         
         return False
     
+
     def Pressed(self, x, y, player):
         if self._Board__winner != 0 or self.GetCover() == True:
             return -1
@@ -184,39 +182,16 @@ class Big_Board(Board):
     #
     
 
-    def CheckForWin(self, x, y, player):        
-        # Checks Rows
-        if x != 2 and Board.GetCell(self, x + 1, y) == player:
-            self.SetGameWinner(player)
-            return
-        if x != 0 and Board.GetCell(self, x - 1, y) == player:
-            self.SetGameWinner(player)
-            return
-        #
+    def CheckForWin(self):
+        win_combos = [(0,1), (1,2), (3,4), (4,5), (5,6), (6,7), (7,8), (0,3), (1,4), (2,5), (3,6), (4,7), (5,8), (0,4), (2,4), (4,6), (4,8)]
+        for a,b in win_combos:
+            if self._Board__cells[a] != 0 and (self._Board__cells[a] == self._Board__cells[b] or self._Board__cells[b] == self._Board__cells[a]):
+                self._Board__gameWinner = self._Board__cells[a]
 
-        # Checks Columns
-        if y != 2 and Board.GetCell(self, x, y + 1) == player:
-            self.SetGameWinner(player)
-            return
-        if y != 0 and Board.GetCell(self, x, y - 1) == player:
-            self.SetGameWinner(player)
-            return
-        #
-
-        # Checks Diagonals 
-        if x != 2 and y != 2 and Board.GetCell(self, x + 1, y + 1) == player:
-            self.SetGameWinner(player)
-            return
-        if x != 0 and y != 0 and Board.GetCell(self, x - 1, y - 1) == player:
-            self.SetGameWinner(player)
-            return
-        if x != 2 and y != 0 and Board.GetCell(self, x + 1, y - 1) == player:
-            self.SetGameWinner(player)
-            return
-        if x != 0 and y != 2 and Board.GetCell(self, x - 1, y + 1) == player:
-            self.SetGameWinner(player)
-            return
-        #
+    
+    def UpdateBoardWins(self, boards):
+        for i in range(9):
+            self.SetCell(i % 3, int(i / 3), boards[i].GetWinner())
 #
 
 
@@ -249,7 +224,8 @@ def Press(mousePressEvent, boards, bigBoard, player):
 
     boardIndex = boards.index(board)
 
-    bigBoard.CheckForWin(boardIndex % 3, int(boardIndex / 3), player)
+    bigBoard.UpdateBoardWins(boards)
+    bigBoard.CheckForWin()
     return board.Pressed(pressX, pressY, player)
 #
 
@@ -284,7 +260,6 @@ while not gameOver:
         board.Display(smallIcons, largeIcons)
     #
 
-
     # Pygame Event Handler
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -298,9 +273,6 @@ while not gameOver:
             
             # Updating the board for the next turn
             if selectedBoard != -1:
-                if mainBoard.GetGameWinner() != 0:
-                    gameOver = True
-
                 if boards[selectedBoard].GetWinner() != 0:
                     selectedBoard = -1
                 for i in range(9):
@@ -314,10 +286,17 @@ while not gameOver:
                 else:
                     player += 1
             #
-            
     #
 
+    # Game Logic
+    mainBoard.UpdateBoardWins(boards)
+    mainBoard.CheckForWin()
+
+    if mainBoard.GetGameWinner() != 0:
+        gameOver = True
+
     pygame.display.flip() # Update the screen
+    #
 #
 
-pygame.quit()
+#pygame.quit()
