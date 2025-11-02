@@ -14,6 +14,8 @@ from server import GameServer  # local server in a thread if we host
 WIDTH, HEIGHT = 720, 720
 PORT = 8765
 
+TOP_BAR = 50  # <— reserve space at the top for player / turn
+
 # screens
 SCREEN_USERNAME = "username"
 SCREEN_MENU = "menu"
@@ -162,7 +164,7 @@ def draw_input(screen, rect, text, font, placeholder=""):
 
 
 # =========================================================
-# GAME BOARD DRAW (tighter icons + bigger GAME OVER)
+# GAME BOARD DRAW (offset so top bar doesn't cover)
 # =========================================================
 def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_small):
     screen.fill((15, 23, 42))
@@ -173,13 +175,16 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
         screen.blit(surf, surf.get_rect(center=(WIDTH // 2, HEIGHT // 2)))
         return
 
-    cell = WIDTH // 3
+    # usable vertical space (under the top bar)
+    usable_h = HEIGHT - TOP_BAR
+    # board is 3x3, each is:
+    cell = usable_h // 3
     small = cell // 3
 
-    # 1) draw 9 mini boards
+    # 1) draw 9 mini boards (starting at y = TOP_BAR)
     for b in range(9):
         bx = (b % 3) * cell
-        by = (b // 3) * cell
+        by = TOP_BAR + (b // 3) * cell
         if board_img:
             screen.blit(pygame.transform.smoothscale(board_img, (cell, cell)), (bx, by))
         else:
@@ -194,7 +199,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
     mark_size = int(small * mark_scale)
     for b in range(9):
         base_x = (b % 3) * cell
-        base_y = (b // 3) * cell
+        base_y = TOP_BAR + (b // 3) * cell
         for i in range(9):
             cx = i % 3
             cy = i // 3
@@ -217,13 +222,13 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
                 t = font_small.render(val, True, COLOR_TEXT)
                 screen.blit(t, t.get_rect(center=(xpix + small // 2, ypix + small // 2)))
 
-    # 3) overlay claimed / tied small boards (also smaller)
+    # 3) overlay claimed / tied small boards
     grid_winners = st.board.get("grid_winners", [""] * 9)
     for b, winner in enumerate(grid_winners):
         if not winner:
             continue
         bx = (b % 3) * cell
-        by = (b // 3) * cell
+        by = TOP_BAR + (b // 3) * cell
 
         overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
         overlay.fill((15, 23, 42, 170))
@@ -255,41 +260,57 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
     forced = st.board["next_forced"]
     if isinstance(forced, int) and forced >= 0:
         fx = (forced % 3) * cell
-        fy = (forced // 3) * cell
+        fy = TOP_BAR + (forced // 3) * cell
         forced_overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
         forced_overlay.fill((30, 64, 175, 80))
         screen.blit(forced_overlay, (fx, fy))
         pygame.draw.rect(screen, (148, 163, 184), (fx, fy, cell, cell), 4, border_radius=6)
 
-    # 5) game over banner — bigger, full width
+    # 5) game over banner at the bottom
     macro_winner = st.board.get("macro_winner", "")
     macro_tied = st.board.get("macro_tied", False)
     if macro_winner or macro_tied:
         bar_h = 80
         banner = pygame.Surface((WIDTH, bar_h))
-        # solid colour (teal-ish)
         if macro_winner:
-            banner.fill((13, 148, 136))  # green/teal
+            banner.fill((13, 148, 136))
             message = f"GAME OVER ({st.win_rule}): {macro_winner} wins!"
         else:
-            banner.fill((148, 163, 184))  # grey
+            banner.fill((148, 163, 184))
             message = f"GAME OVER ({st.win_rule}): Draw"
-
         screen.blit(banner, (0, HEIGHT - bar_h))
 
-        # bigger font for banner
         font_big = pygame.font.SysFont("Segoe UI", 28, bold=True)
-        txt = font_big.render(message, True, (241, 245, 249)) if macro_winner else font_big.render(message, True, (15, 23, 42))
+        txt_color = (241, 245, 249) if macro_winner else (15, 23, 42)
+        txt = font_big.render(message, True, txt_color)
         screen.blit(txt, txt.get_rect(center=(WIDTH // 2, HEIGHT - bar_h // 2)))
 
 
 def pixel_to_move(mx, my) -> Tuple[int, int]:
-    cell = WIDTH // 3
+    """
+    Convert a click to (big_idx, small_idx).
+    Must mirror the drawing math: we started the board at y = TOP_BAR.
+    """
+    usable_h = HEIGHT - TOP_BAR
+    cell = usable_h // 3
     small = cell // 3
+
+    # if click is in the top bar, ignore
+    if my < TOP_BAR:
+        return -1, -1
+
+    # shift y down
+    my_adj = my - TOP_BAR
+
     big_x = mx // cell
-    big_y = my // cell
+    big_y = my_adj // cell
+
+    if not (0 <= big_x < 3 and 0 <= big_y < 3):
+        return -1, -1
+
     small_x = (mx % cell) // small
-    small_y = (my % cell) // small
+    small_y = (my_adj % cell) // small
+
     big = big_y * 3 + big_x
     small_idx = small_y * 3 + small_x
     return big, small_idx
@@ -309,7 +330,7 @@ def main():
     font_body = pygame.font.SysFont("Segoe UI", 22)
     font_small = pygame.font.SysFont("Segoe UI", 18)
 
-    # load images (lowercase to match your folder)
+    # load images (lowercase)
     board_img = load_image("images/board.png")
     x_img = load_image("images/circlesquare.png")
     o_img = load_image("images/oval.png")
@@ -358,6 +379,7 @@ def main():
                     if pygame.Rect(30, 30, 90, 36).collidepoint(mx, my):
                         screen_mode = SCREEN_MENU
                     elif pygame.Rect(210, 240, 300, 60).collidepoint(mx, my):
+                        # 2 players
                         start_server_in_thread(2)
                         client_state = ClientState()
                         try:
@@ -367,6 +389,7 @@ def main():
                         except OSError:
                             screen_mode = SCREEN_MENU
                     elif pygame.Rect(210, 320, 300, 60).collidepoint(mx, my):
+                        # 3 players
                         start_server_in_thread(3)
                         client_state = ClientState()
                         try:
@@ -412,7 +435,8 @@ def main():
                     else:
                         if client_state.you_are in ("X", "O", "Z") and client_state.connected_players >= client_state.required_players:
                             big, small = pixel_to_move(*e.pos)
-                            send(client_socket, {"type": "move", "big": big, "small": small})
+                            if big != -1 and small != -1:
+                                send(client_socket, {"type": "move", "big": big, "small": small})
                         else:
                             if client_state.connected_players < client_state.required_players:
                                 client_state.last_error = "Waiting for players..."
@@ -494,19 +518,22 @@ def main():
                 screen_mode = SCREEN_GAME
 
         elif screen_mode == SCREEN_GAME:
+            # draw board (below top bar)
             draw_board(screen, client_state, board_img, x_img, o_img, z_img, font_small)
-            # top bar
-            pygame.draw.rect(screen, (15, 23, 42), (0, 0, WIDTH, 40))
-            pygame.draw.line(screen, (30, 41, 59), (0, 40), (WIDTH, 40), 1)
+
+            # TOP BAR (draw over AFTER board so it stays clean)
+            pygame.draw.rect(screen, (14, 24, 36), (0, 0, WIDTH, TOP_BAR))
+            pygame.draw.line(screen, (30, 41, 59), (0, TOP_BAR), (WIDTH, TOP_BAR), 1)
             role = client_state.you_are or "?"
             your_name = client_state.player_names.get(role, "")
             label = f"You: {your_name} ({role})" if your_name else f"You: ({role})"
-            info = f"{label}   |   Turn: {client_state.turn}   |   {client_state.connected_players}/{client_state.required_players}"
-            surf = font_small.render(info, True, COLOR_TEXT)
-            screen.blit(surf, (12, 10))
+            info = f"{label}  |  Turn: {client_state.turn}  |  {client_state.connected_players}/{client_state.required_players}"
+            top_font = pygame.font.SysFont("Segoe UI", 20)
+            surf = top_font.render(info, True, COLOR_TEXT)
+            screen.blit(surf, (10, (TOP_BAR - surf.get_height()) // 2))
+
             if client_state.last_error:
                 err = font_small.render(client_state.last_error, True, (248, 113, 113))
-                # keep it above bottom bar
                 screen.blit(err, (12, HEIGHT - 100))
 
         pygame.display.flip()
