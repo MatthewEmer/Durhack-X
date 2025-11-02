@@ -37,8 +37,6 @@ COLOR_MUTED = (148, 163, 184)    # slate-400
 COLOR_ACCENT = (56, 189, 248)    # sky-400
 COLOR_ACCENT_DARK = (8, 47, 73)  # dark blue for pressed
 
-# fonts will be made after pygame.init()
-
 
 # =========================================================
 # NETWORK HELPERS
@@ -168,7 +166,7 @@ def draw_input(screen, rect, text, font, placeholder=""):
 
 
 # =========================================================
-# GAME BOARD DRAW
+# GAME BOARD DRAW  (FIXED ORDER + VISIBLE HIGHLIGHT)
 # =========================================================
 def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_small):
     # background for game
@@ -183,14 +181,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
     cell = WIDTH // 3
     small = cell // 3
 
-    # forced board highlight
-    forced = st.board["next_forced"]
-    if forced is not None:
-        fx = (forced % 3) * cell
-        fy = (forced // 3) * cell
-        pygame.draw.rect(screen, (30, 64, 175), (fx, fy, cell, cell))
-
-    # draw 9 boards
+    # 1) draw the 9 mini-boards first
     for b in range(9):
         bx = (b % 3) * cell
         by = (b // 3) * cell
@@ -204,6 +195,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
                 pygame.draw.line(screen, (71, 85, 105), (bx + j * small, by), (bx + j * small, by + cell), 2)
                 pygame.draw.line(screen, (71, 85, 105), (bx, by + j * small), (bx + cell, by + j * small), 2)
 
+    # 2) now draw the marks on top
     grids = st.board["grids"]
     for b in range(9):
         base_x = (b % 3) * cell
@@ -225,6 +217,20 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
             else:
                 t = font_small.render(val, True, COLOR_TEXT)
                 screen.blit(t, t.get_rect(center=(xpix + small // 2, ypix + small // 2)))
+
+    # 3) finally, draw the forced-board highlight ON TOP so it’s visible
+    forced = st.board["next_forced"]
+    if isinstance(forced, int) and forced >= 0:
+        fx = (forced % 3) * cell
+        fy = (forced // 3) * cell
+
+        # semi-transparent overlay so it shows over the board image
+        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+        overlay.fill((30, 64, 175, 80))  # (r,g,b,alpha)
+        screen.blit(overlay, (fx, fy))
+
+        # outline to make it obvious
+        pygame.draw.rect(screen, (148, 163, 184), (fx, fy, cell, cell), 4, border_radius=6)
 
 
 def pixel_to_move(mx, my) -> Tuple[int, int]:
@@ -255,10 +261,11 @@ def main():
     font_small = pygame.font.SysFont("Segoe UI", 18)
 
     # load images for actual game (optional)
-    board_img = load_image("Images/board.png")
-    x_img = load_image("Images/circlesquare.png")
-    o_img = load_image("Images/oval.png")
-    z_img = load_image("Images/tear.png")
+    # NOTE: using lowercase 'images' to match your folder
+    board_img = load_image("images/board.png")
+    x_img = load_image("images/circlesquare.png")
+    o_img = load_image("images/oval.png")
+    z_img = load_image("images/tear.png")
 
     # UI state
     screen_mode = SCREEN_USERNAME
