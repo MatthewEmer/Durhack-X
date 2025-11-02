@@ -1,0 +1,61 @@
+inputs: previous move (small board and x,y), positions (x,y) and player (1,2 or 3)
+output: move (x,y)?
+
+
+if no previous move then
+    next move can be anywhere
+    user selects a small board
+    repeat until selected square is valid
+        user selects a square on the small board
+    increment the small board's filled_cells 
+    set cell
+
+    call the check function on the small board
+    if it's a win do
+        set winner to current player
+        change display to big icon
+    else
+        check for clear and clear if necessary
+    end if
+
+
+else 
+    map previous x and y to a small board
+
+    if small board is claimed by a player then
+        next move can be anywhere
+        user selects a small board
+        repeat until selected square is valid
+            user selects a square on the small board
+        increment the small board's filled_cells 
+        set cell
+
+        call the check function on the small board
+        if it's a win do
+            set winner to current player
+            change display to big icon
+        else
+            check for clear and clear if necessary
+        end if
+
+    else
+        select mapped small board  // grey out others and lock options to small board in question
+        repeat until selected square is valid
+            user selects a square on the small board
+        increment the small board's filled_cells 
+        set cell
+
+        call the check function on the small board
+        if it's a win do
+            set winner to current player
+            change display to big icon
+        else
+            check for clear and clear if necessary
+        end if
+    end if
+
+check big board for win
+if win then
+    game over
+else
+    continue to next player
