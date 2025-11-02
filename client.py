@@ -24,19 +24,14 @@ SCREEN_GAME = "game"
 # ---------------------------------------------------------
 # DARK PALETTE
 # ---------------------------------------------------------
-# background layers
 COLOR_BG = (15, 23, 42)          # main background (slate-900)
 COLOR_PANEL = (30, 41, 59)       # panels / cards (slate-800)
 COLOR_PANEL_LIGHT = (51, 65, 85) # slightly lighter (slate-700)
 COLOR_INPUT_BG = (15, 23, 42)    # input background
 COLOR_BORDER = (71, 85, 105)     # grey border
-# text
 COLOR_TEXT = (248, 250, 252)     # near-white
 COLOR_MUTED = (148, 163, 184)    # slate-400
-# accents
 COLOR_ACCENT = (56, 189, 248)    # sky-400
-COLOR_ACCENT_DARK = (8, 47, 73)  # dark blue for pressed
-
 
 # =========================================================
 # NETWORK HELPERS
@@ -101,7 +96,7 @@ def get_local_ip() -> str:
 # =========================================================
 class ClientState:
     def __init__(self):
-        self.you_are: Optional[str] = None  # "X" / "O" / "Z"
+        self.you_are: Optional[str] = None  # "X" / "O" / "Z" / "SPECTATOR"
         self.turn: str = "X"
         self.board = None  # dict from server
         self.required_players: int = 2
@@ -166,7 +161,7 @@ def draw_input(screen, rect, text, font, placeholder=""):
 
 
 # =========================================================
-# GAME BOARD DRAW  (FIXED ORDER + VISIBLE HIGHLIGHT)
+# GAME BOARD DRAW  (with claimed-board indicator)
 # =========================================================
 def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_small):
     # background for game
@@ -195,7 +190,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
                 pygame.draw.line(screen, (71, 85, 105), (bx + j * small, by), (bx + j * small, by + cell), 2)
                 pygame.draw.line(screen, (71, 85, 105), (bx, by + j * small), (bx + cell, by + j * small), 2)
 
-    # 2) now draw the marks on top
+    # 2) draw the small marks
     grids = st.board["grids"]
     for b in range(9):
         base_x = (b % 3) * cell
@@ -218,19 +213,69 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
                 t = font_small.render(val, True, COLOR_TEXT)
                 screen.blit(t, t.get_rect(center=(xpix + small // 2, ypix + small // 2)))
 
-    # 3) finally, draw the forced-board highlight ON TOP so it’s visible
+    # 3) overlay claimed / tied small boards
+    grid_winners = st.board.get("grid_winners", [""] * 9)
+    for b, winner in enumerate(grid_winners):
+        if not winner:
+            continue  # still active
+        bx = (b % 3) * cell
+        by = (b // 3) * cell
+
+        # darken the whole 3x3 board
+        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+        overlay.fill((15, 23, 42, 170))  # semi-transparent dark
+        screen.blit(overlay, (bx, by))
+
+        # draw big winner mark
+        # scale to fit nicely
+        pad = 28
+        big_size = cell - pad * 2
+        center_x = bx + cell // 2
+        center_y = by + cell // 2
+
+        if winner == "X" and x_img:
+            bi = pygame.transform.smoothscale(x_img, (big_size, big_size))
+            screen.blit(bi, bi.get_rect(center=(center_x, center_y)))
+        elif winner == "O" and o_img:
+            bi = pygame.transform.smoothscale(o_img, (big_size, big_size))
+            screen.blit(bi, bi.get_rect(center=(center_x, center_y)))
+        elif winner == "Z" and z_img:
+            bi = pygame.transform.smoothscale(z_img, (big_size, big_size))
+            screen.blit(bi, bi.get_rect(center=(center_x, center_y)))
+        elif winner == "T":
+            t = font_small.render("T", True, (203, 213, 225))
+            screen.blit(t, t.get_rect(center=(center_x, center_y)))
+        else:
+            # fallback to text
+            t = font_small.render(winner, True, COLOR_TEXT)
+            screen.blit(t, t.get_rect(center=(center_x, center_y)))
+
+    # 4) forced-board highlight ON TOP so it’s visible
     forced = st.board["next_forced"]
     if isinstance(forced, int) and forced >= 0:
         fx = (forced % 3) * cell
         fy = (forced // 3) * cell
 
-        # semi-transparent overlay so it shows over the board image
-        overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
-        overlay.fill((30, 64, 175, 80))  # (r,g,b,alpha)
-        screen.blit(overlay, (fx, fy))
-
-        # outline to make it obvious
+        forced_overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
+        forced_overlay.fill((30, 64, 175, 80))
+        screen.blit(forced_overlay, (fx, fy))
         pygame.draw.rect(screen, (148, 163, 184), (fx, fy, cell, cell), 4, border_radius=6)
+
+    # 5) overall game over banner (macro winner / tie)
+    macro_winner = st.board.get("macro_winner", "")
+    macro_tied = st.board.get("macro_tied", False)
+    if macro_winner:
+        banner = pygame.Surface((WIDTH, 50), pygame.SRCALPHA)
+        banner.fill((15, 118, 110, 230))  # teal-ish
+        screen.blit(banner, (0, HEIGHT - 50))
+        txt = font_small.render(f"GAME OVER: {macro_winner} wins!", True, (241, 245, 249))
+        screen.blit(txt, txt.get_rect(center=(WIDTH // 2, HEIGHT - 25)))
+    elif macro_tied:
+        banner = pygame.Surface((WIDTH, 50), pygame.SRCALPHA)
+        banner.fill((148, 163, 184, 230))
+        screen.blit(banner, (0, HEIGHT - 50))
+        txt = font_small.render("GAME OVER: Draw", True, (15, 23, 42))
+        screen.blit(txt, txt.get_rect(center=(WIDTH // 2, HEIGHT - 25)))
 
 
 def pixel_to_move(mx, my) -> Tuple[int, int]:
@@ -260,8 +305,7 @@ def main():
     font_body = pygame.font.SysFont("Segoe UI", 22)
     font_small = pygame.font.SysFont("Segoe UI", 18)
 
-    # load images for actual game (optional)
-    # NOTE: using lowercase 'images' to match your folder
+    # load images (lowercase folder to match your screenshot)
     board_img = load_image("images/board.png")
     x_img = load_image("images/circlesquare.png")
     o_img = load_image("images/oval.png")
@@ -278,9 +322,6 @@ def main():
 
     running = True
     while running:
-        # ------------------------------------------------
-        # events
-        # ------------------------------------------------
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 running = False
@@ -312,11 +353,10 @@ def main():
             elif screen_mode == SCREEN_HOST_CHOICE:
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     mx, my = e.pos
-                    # back
                     if pygame.Rect(30, 30, 90, 36).collidepoint(mx, my):
                         screen_mode = SCREEN_MENU
-                    # 2 players
                     elif pygame.Rect(210, 240, 300, 60).collidepoint(mx, my):
+                        # 2 players
                         start_server_in_thread(2)
                         client_state = ClientState()
                         try:
@@ -325,8 +365,8 @@ def main():
                             screen_mode = SCREEN_HOST_LOBBY
                         except OSError:
                             screen_mode = SCREEN_MENU
-                    # 3 players
                     elif pygame.Rect(210, 320, 300, 60).collidepoint(mx, my):
+                        # 3 players
                         start_server_in_thread(3)
                         client_state = ClientState()
                         try:
@@ -363,27 +403,37 @@ def main():
                         if e.unicode.isdigit() or e.unicode in (".", ":"):
                             ip_text += e.unicode
 
-            # HOST LOBBY: no input needed right now
+            # HOST LOBBY
+            elif screen_mode == SCREEN_HOST_LOBBY:
+                # no controls right now – we auto-advance when all players join
+                pass
 
-            # GAME SCREEN: clicks to place move
+            # GAME
             elif screen_mode == SCREEN_GAME:
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and client_state.board:
-                    if client_state.you_are in ("X", "O", "Z") and client_state.connected_players >= client_state.required_players:
-                        big, small = pixel_to_move(*e.pos)
-                        send(client_socket, {"type": "move", "big": big, "small": small})
+                    # don't send moves if game over
+                    macro_winner = client_state.board.get("macro_winner", "")
+                    macro_tied = client_state.board.get("macro_tied", False)
+                    if macro_winner or macro_tied:
+                        client_state.last_error = "Game over."
                     else:
-                        if client_state.connected_players < client_state.required_players:
-                            client_state.last_error = "Waiting for players..."
+                        if client_state.you_are in ("X", "O", "Z") and client_state.connected_players >= client_state.required_players:
+                            big, small = pixel_to_move(*e.pos)
+                            send(client_socket, {"type": "move", "big": big, "small": small})
                         else:
-                            client_state.last_error = "You are a spectator"
+                            if client_state.connected_players < client_state.required_players:
+                                client_state.last_error = "Waiting for players..."
+                            else:
+                                client_state.last_error = "You are a spectator"
 
-        # ------------------------------------------------
-        # drawing
-        # ------------------------------------------------
+        # ===================== DRAWING =====================
         if screen_mode == SCREEN_USERNAME:
             screen.fill(COLOR_BG)
-            title = font_title.render("Enter username", True, COLOR_TEXT)
+            title = pygame.font.SysFont("Segoe UI", 42, bold=True).render("Enter username", True, COLOR_TEXT)
             screen.blit(title, title.get_rect(center=(WIDTH // 2, 130)))
+
+            font_body = pygame.font.SysFont("Segoe UI", 22)
+            font_small = pygame.font.SysFont("Segoe UI", 18)
 
             input_rect = pygame.Rect(140, 230, 440, 56)
             draw_input(screen, input_rect, username, font_body, "your name")
@@ -392,16 +442,17 @@ def main():
 
         elif screen_mode == SCREEN_MENU:
             screen.fill(COLOR_BG)
-            # top bar
             pygame.draw.rect(screen, (15, 23, 42), (0, 0, WIDTH, 90))
             pygame.draw.line(screen, (30, 41, 59), (0, 90), (WIDTH, 90), 1)
 
-            title = font_title.render("Ultimate Noughts and Crosses", True, COLOR_TEXT)
+            title = pygame.font.SysFont("Segoe UI", 42, bold=True).render("Ultimate Noughts and Crosses", True, COLOR_TEXT)
             screen.blit(title, title.get_rect(center=(WIDTH // 2, 45)))
 
+            font_small = pygame.font.SysFont("Segoe UI", 18)
             hello = font_small.render(f"Hi {username}", True, COLOR_MUTED)
             screen.blit(hello, (20, 15))
 
+            font_body = pygame.font.SysFont("Segoe UI", 22)
             btn_host = pygame.Rect(210, 260, 300, 60)
             btn_join = pygame.Rect(210, 340, 300, 60)
             draw_button(screen, btn_host, "HOST A GAME", font_body, variant="primary")
@@ -409,7 +460,10 @@ def main():
 
         elif screen_mode == SCREEN_HOST_CHOICE:
             screen.fill(COLOR_BG)
-            # back
+            font_small = pygame.font.SysFont("Segoe UI", 18)
+            font_body = pygame.font.SysFont("Segoe UI", 22)
+            font_title = pygame.font.SysFont("Segoe UI", 42, bold=True)
+
             back_rect = pygame.Rect(30, 30, 90, 36)
             draw_button(screen, back_rect, "Back", font_small)
 
@@ -421,6 +475,9 @@ def main():
 
         elif screen_mode == SCREEN_IP_INPUT:
             screen.fill(COLOR_BG)
+            font_small = pygame.font.SysFont("Segoe UI", 18)
+            font_body = pygame.font.SysFont("Segoe UI", 22)
+            font_title = pygame.font.SysFont("Segoe UI", 42, bold=True)
 
             back_rect = pygame.Rect(30, 30, 90, 36)
             draw_button(screen, back_rect, "Back", font_small)
@@ -440,6 +497,9 @@ def main():
 
         elif screen_mode == SCREEN_HOST_LOBBY:
             screen.fill(COLOR_BG)
+            font_sub = pygame.font.SysFont("Segoe UI", 26)
+            font_small = pygame.font.SysFont("Segoe UI", 18)
+            font_body = pygame.font.SysFont("Segoe UI", 22)
 
             # header card
             pygame.draw.rect(screen, COLOR_PANEL, (80, 40, 560, 120), border_radius=18)
@@ -476,8 +536,10 @@ def main():
                 screen_mode = SCREEN_GAME
 
         elif screen_mode == SCREEN_GAME:
-            draw_board(screen, client_state, board_img, x_img, o_img, z_img, font_small)
-            # top bar
+            draw_board(screen, client_state, board_img, x_img, o_img, z_img, pygame.font.SysFont("Segoe UI", 18))
+
+            # top bar info
+            font_small = pygame.font.SysFont("Segoe UI", 18)
             pygame.draw.rect(screen, (15, 23, 42), (0, 0, WIDTH, 40))
             pygame.draw.line(screen, (30, 41, 59), (0, 40), (WIDTH, 40), 1)
             role = client_state.you_are or "?"
@@ -489,7 +551,7 @@ def main():
 
             if client_state.last_error:
                 err = font_small.render(client_state.last_error, True, (248, 113, 113))
-                screen.blit(err, (12, HEIGHT - 28))
+                screen.blit(err, (12, HEIGHT - 70))  # above the game-over banner
 
         pygame.display.flip()
         clock.tick(60)
