@@ -35,7 +35,9 @@ PURE_WHITE = (255, 255, 255)
 # ---------------------------------------------------------
 # NETWORK HELPERS
 # ---------------------------------------------------------
-def send(sock: socket.socket, payload: dict):
+def send(sock: Optional[socket.socket], payload: dict):
+    if sock is None:
+        return
     try:
         sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
     except OSError:
@@ -102,7 +104,7 @@ class ClientState:
         self.player_names: Dict[str, str] = {}
         self.spectator_names = []
         self.last_error: Optional[str] = None
-        self.win_rule: str = ""
+        self.disconnected: bool = False  # for remote shutdown
 
     def handle(self, msg: Dict):
         t = msg.get("type")
@@ -112,7 +114,6 @@ class ClientState:
             self.connected_players = msg.get("connected_players", 1)
             self.player_names = msg.get("player_names", {})
             self.spectator_names = msg.get("spectator_names", [])
-            self.win_rule = msg.get("win_rule", self.win_rule)
         elif t == "state":
             self.turn = msg.get("turn")
             self.board = msg.get("board")
@@ -120,10 +121,12 @@ class ClientState:
             self.connected_players = msg.get("connected_players", self.connected_players)
             self.player_names = msg.get("player_names", self.player_names)
             self.spectator_names = msg.get("spectator_names", self.spectator_names)
-            self.win_rule = msg.get("win_rule", self.win_rule)
             self.last_error = None
         elif t == "error":
             self.last_error = msg.get("message")
+        elif t == "shutdown":
+            # server told us to go home
+            self.disconnected = True
 
 
 # ---------------------------------------------------------
@@ -138,15 +141,8 @@ def load_image(path: str):
         return None
 
 
-def draw_button(screen, rect, text, font, variant="normal"):
-    if variant == "primary":
-        bg = COLOR_ACCENT
-        fg = (10, 22, 33)
-    else:
-        bg = COLOR_PANEL_LIGHT
-        fg = COLOR_TEXT
-    pygame.draw.rect(screen, bg, rect, border_radius=16)
-    pygame.draw.rect(screen, (12, 17, 26), rect, 1, border_radius=16)
+def draw_button(screen, rect, text, font, bg, fg=(10, 22, 33)):
+    pygame.draw.rect(screen, bg, rect, border_radius=12)
     txt = font.render(text, True, fg)
     screen.blit(txt, txt.get_rect(center=rect.center))
 
@@ -164,13 +160,17 @@ def draw_input(screen, rect, text, font, placeholder=""):
 # DRAW BOARD
 # ---------------------------------------------------------
 def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_small):
+    """
+    Draws the game board and, if game is over, draws HOME button.
+    Returns: pygame.Rect or None
+    """
     screen.fill((15, 23, 42))
 
     if not st.board:
         msg = f"Waiting for players... {st.connected_players}/{st.required_players}"
         surf = font_small.render(msg, True, COLOR_TEXT)
         screen.blit(surf, surf.get_rect(center=(WIDTH // 2, HEIGHT // 2)))
-        return
+        return None
 
     usable_h = HEIGHT - TOP_BAR
     cell = usable_h // 3
@@ -178,7 +178,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
 
     grid_winners = st.board.get("grid_winners", [""] * 9)
 
-    # 1) base boards (or blank white if decided)
+    # base boards
     for b in range(9):
         bx = (b % 3) * cell
         by = TOP_BAR + (b // 3) * cell
@@ -195,7 +195,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
                     pygame.draw.line(screen, (71, 85, 105), (bx + j * small, by), (bx + j * small, by + cell), 2)
                     pygame.draw.line(screen, (71, 85, 105), (bx, by + j * small), (bx + cell, by + j * small), 2)
 
-    # 2) small marks in undecided boards
+    # small marks
     mark_scale = 0.7
     mark_size = int(small * mark_scale)
     for b in range(9):
@@ -223,12 +223,11 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
                 t = font_small.render(val, True, COLOR_TEXT)
                 screen.blit(t, t.get_rect(center=(xpix + small // 2, ypix + small // 2)))
 
-    # 3) big icons for decided boards (but NOT for ties now — ties may be cleared in 3p mode)
+    # big winners (not T)
     for b, winner in enumerate(grid_winners):
         if not winner:
             continue
         if winner == "T":
-            # leave as white
             continue
         bx = (b % 3) * cell
         by = TOP_BAR + (b // 3) * cell
@@ -249,7 +248,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
             t = font_small.render(winner, True, (15, 23, 42))
             screen.blit(t, t.get_rect(center=(center_x, center_y)))
 
-    # 4) forced board highlight
+    # forced
     forced = st.board["next_forced"]
     if isinstance(forced, int) and forced >= 0:
         fx = (forced % 3) * cell
@@ -259,31 +258,35 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
         screen.blit(overlay, (fx, fy))
         pygame.draw.rect(screen, (148, 163, 184), (fx, fy, cell, cell), 4, border_radius=6)
 
-    # 5) big GAME OVER overlay
+    # game over overlay
     macro_winner = st.board.get("macro_winner", "")
     macro_tied = st.board.get("macro_tied", False)
     if macro_winner or macro_tied:
-        # darken entire screen
         dim = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        dim.fill((7, 11, 17, 200))  # dark bluish, 200 alpha
+        dim.fill((7, 11, 17, 200))
         screen.blit(dim, (0, 0))
 
         if macro_winner:
-            # try to resolve name
             winner_mark = macro_winner
             winner_name = st.player_names.get(winner_mark, "")
             if winner_name:
                 msg = f"{winner_name} ({winner_mark}) WINS!"
             else:
                 msg = f"{winner_mark} WINS!"
-            colour = (239, 246, 255)
         else:
             msg = "DRAW!"
-            colour = (239, 246, 255)
 
         big_font = pygame.font.SysFont("Segoe UI", 56, bold=True)
-        text_surf = big_font.render(msg, True, colour)
-        screen.blit(text_surf, text_surf.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 10)))
+        text_surf = big_font.render(msg, True, (239, 246, 255))
+        screen.blit(text_surf, text_surf.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 40)))
+
+        # HOME button
+        home_rect = pygame.Rect(WIDTH // 2 - 90, HEIGHT // 2 + 20, 180, 48)
+        btn_font = pygame.font.SysFont("Segoe UI", 22, bold=True)
+        draw_button(screen, home_rect, "HOME", btn_font, COLOR_ACCENT, (10, 22, 33))
+        return home_rect
+
+    return None
 
 
 def pixel_to_move(mx, my) -> Tuple[int, int]:
@@ -327,16 +330,32 @@ def main():
     username = ""
     ip_text = ""
     join_error = ""
-    client_socket = None
+    client_socket: Optional[socket.socket] = None
     client_state = ClientState()
     host_local_ip = "127.0.0.1"
+    i_am_host = False  # <--- important
 
     running = True
+    # we'll store a click to process after draw
+    pending_click: Optional[Tuple[int, int]] = None
+
     while running:
+        # if server told us to shutdown, go home
+        if client_state.disconnected:
+            if client_socket:
+                try:
+                    client_socket.close()
+                except:
+                    pass
+            client_socket = None
+            client_state = ClientState()
+            screen_mode = SCREEN_MENU
+
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 running = False
 
+            # USERNAME
             if screen_mode == SCREEN_USERNAME:
                 if e.type == pygame.KEYDOWN:
                     if e.key == pygame.K_RETURN and username.strip():
@@ -347,6 +366,7 @@ def main():
                         if e.unicode.isalnum() or e.unicode in ("_", "-"):
                             username += e.unicode
 
+            # MENU
             elif screen_mode == SCREEN_MENU:
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     mx, my = e.pos
@@ -356,33 +376,40 @@ def main():
                         screen_mode = SCREEN_IP_INPUT
                         ip_text = ""
                         join_error = ""
+                        i_am_host = False
 
+            # HOST CHOICE
             elif screen_mode == SCREEN_HOST_CHOICE:
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     mx, my = e.pos
                     if pygame.Rect(30, 30, 90, 36).collidepoint(mx, my):
                         screen_mode = SCREEN_MENU
                     elif pygame.Rect(210, 240, 300, 60).collidepoint(mx, my):
-                        # 2 players
+                        # host 2p
                         start_server_in_thread(2)
                         client_state = ClientState()
                         try:
                             client_socket = connect_to_server("127.0.0.1", PORT, client_state, username)
                             host_local_ip = get_local_ip()
                             screen_mode = SCREEN_HOST_LOBBY
+                            i_am_host = True
                         except OSError:
                             screen_mode = SCREEN_MENU
+                            i_am_host = False
                     elif pygame.Rect(210, 320, 300, 60).collidepoint(mx, my):
-                        # 3 players
+                        # host 3p
                         start_server_in_thread(3)
                         client_state = ClientState()
                         try:
                             client_socket = connect_to_server("127.0.0.1", PORT, client_state, username)
                             host_local_ip = get_local_ip()
                             screen_mode = SCREEN_HOST_LOBBY
+                            i_am_host = True
                         except OSError:
                             screen_mode = SCREEN_MENU
+                            i_am_host = False
 
+            # IP INPUT
             elif screen_mode == SCREEN_IP_INPUT:
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     if pygame.Rect(30, 30, 90, 36).collidepoint(*e.pos):
@@ -399,6 +426,7 @@ def main():
                             try:
                                 client_socket = connect_to_server(target, PORT, client_state, username)
                                 screen_mode = SCREEN_GAME
+                                i_am_host = False
                             except OSError:
                                 join_error = "Could not connect. Check IP / same Wi-Fi."
                                 ip_text = ""
@@ -408,24 +436,14 @@ def main():
                         if e.unicode.isdigit() or e.unicode in (".", ":"):
                             ip_text += e.unicode
 
+            # GAME (just record clicks here, we'll handle after draw)
             elif screen_mode == SCREEN_GAME:
-                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and client_state.board:
-                    macro_winner = client_state.board.get("macro_winner", "")
-                    macro_tied = client_state.board.get("macro_tied", False)
-                    if macro_winner or macro_tied:
-                        client_state.last_error = "Game over."
-                    else:
-                        if client_state.you_are in ("X", "O", "Z") and client_state.connected_players >= client_state.required_players:
-                            big, small = pixel_to_move(*e.pos)
-                            if big != -1 and small != -1:
-                                send(client_socket, {"type": "move", "big": big, "small": small})
-                        else:
-                            if client_state.connected_players < client_state.required_players:
-                                client_state.last_error = "Waiting for players..."
-                            else:
-                                client_state.last_error = "You are a spectator"
+                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                    pending_click = e.pos
 
-        # ---------------- DRAW ----------------
+        # ------------------ DRAW ------------------
+        home_button_rect = None
+
         if screen_mode == SCREEN_USERNAME:
             screen.fill(COLOR_BG)
             title = font_title.render("Enter username", True, COLOR_TEXT)
@@ -443,22 +461,22 @@ def main():
             screen.blit(title, title.get_rect(center=(WIDTH // 2, 45)))
             hello = font_small.render(f"Hi {username}", True, COLOR_MUTED)
             screen.blit(hello, (20, 15))
-            draw_button(screen, pygame.Rect(210, 260, 300, 60), "HOST A GAME", font_body, variant="primary")
-            draw_button(screen, pygame.Rect(210, 340, 300, 60), "JOIN A GAME", font_body)
+            draw_button(screen, pygame.Rect(210, 260, 300, 60), "HOST A GAME", font_body, COLOR_ACCENT, (10, 22, 33))
+            draw_button(screen, pygame.Rect(210, 340, 300, 60), "JOIN A GAME", font_body, COLOR_PANEL_LIGHT, COLOR_TEXT)
 
         elif screen_mode == SCREEN_HOST_CHOICE:
             screen.fill(COLOR_BG)
             back_rect = pygame.Rect(30, 30, 90, 36)
-            draw_button(screen, back_rect, "Back", font_small)
+            draw_button(screen, back_rect, "Back", font_small, COLOR_PANEL_LIGHT, COLOR_TEXT)
             title = font_title.render("Host: choose players", True, COLOR_TEXT)
             screen.blit(title, title.get_rect(center=(WIDTH // 2, 130)))
-            draw_button(screen, pygame.Rect(210, 240, 300, 60), "2 PLAYERS", font_body, variant="primary")
-            draw_button(screen, pygame.Rect(210, 320, 300, 60), "3 PLAYERS", font_body)
+            draw_button(screen, pygame.Rect(210, 240, 300, 60), "2 PLAYERS", font_body, COLOR_ACCENT, (10, 22, 33))
+            draw_button(screen, pygame.Rect(210, 320, 300, 60), "3 PLAYERS", font_body, COLOR_PANEL_LIGHT, COLOR_TEXT)
 
         elif screen_mode == SCREEN_IP_INPUT:
             screen.fill(COLOR_BG)
             back_rect = pygame.Rect(30, 30, 90, 36)
-            draw_button(screen, back_rect, "Back", font_small)
+            draw_button(screen, back_rect, "Back", font_small, COLOR_PANEL_LIGHT, COLOR_TEXT)
             title = font_title.render("Join a game", True, COLOR_TEXT)
             screen.blit(title, title.get_rect(center=(WIDTH // 2, 130)))
             input_rect = pygame.Rect(140, 230, 440, 56)
@@ -490,6 +508,7 @@ def main():
                 COLOR_TEXT,
             )
             screen.blit(status, (110, 230))
+
             y = 270
             for mark in ("X", "O", "Z"):
                 if mark in client_state.player_names:
@@ -501,7 +520,7 @@ def main():
                 screen_mode = SCREEN_GAME
 
         elif screen_mode == SCREEN_GAME:
-            draw_board(screen, client_state, board_img, x_img, o_img, z_img, font_small)
+            home_button_rect = draw_board(screen, client_state, board_img, x_img, o_img, z_img, font_small)
 
             # top bar
             pygame.draw.rect(screen, (14, 24, 36), (0, 0, WIDTH, TOP_BAR))
@@ -517,6 +536,26 @@ def main():
             if client_state.last_error:
                 err = font_small.render(client_state.last_error, True, (248, 113, 113))
                 screen.blit(err, (12, HEIGHT - 100))
+
+        # ---------- process pending click on home (after draw) ----------
+        if screen_mode == SCREEN_GAME and pending_click and home_button_rect:
+            mx, my = pending_click
+            if home_button_rect.collidepoint(mx, my):
+                # host: tell server to shutdown everyone
+                if i_am_host:
+                    send(client_socket, {"type": "shutdown"})
+                    # we'll get "shutdown" back from server too, but we can go home now
+                # in all cases, drop our socket and go home
+                if client_socket:
+                    try:
+                        client_socket.close()
+                    except:
+                        pass
+                client_socket = None
+                client_state = ClientState()
+                screen_mode = SCREEN_MENU
+
+            pending_click = None  # consume it
 
         pygame.display.flip()
         clock.tick(60)

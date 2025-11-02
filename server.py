@@ -41,23 +41,15 @@ class GameServer:
     players: X,O,(Z)
     late joiners -> spectators
 
-    3 players:
-        - we enable "reset_on_tie" on the board, so tied small boards are wiped
+    EXTRA: if the HOST (first player, "X") sends {"type": "shutdown"},
+    we broadcast "shutdown" to EVERYONE and stop.
     """
     def __init__(self, required_players: int = 2):
         assert required_players in (2, 3)
         self.required_players = required_players
         self.player_order: List[str] = ["X", "O"] if required_players == 2 else ["X", "O", "Z"]
 
-        # board logic: 3-player → recycle tied small boards
-        win_rule = "adjacent-2"
-        if required_players == 3:
-            win_rule = "adjacent-2 + reset-on-tie"
-        self.board = UltimateBoard(
-            reset_on_tie=(required_players == 3),
-            win_rule=win_rule,
-        )
-
+        self.board = UltimateBoard()
         self.lock = threading.Lock()
 
         # mark -> socket
@@ -79,6 +71,9 @@ class GameServer:
     def next_turn(self):
         self.turn_index = (self.turn_index + 1) % len(self.player_order)
 
+    # --------------------------------------------------
+    # broadcast helpers
+    # --------------------------------------------------
     def broadcast_state(self):
         state = {
             "type": "state",
@@ -89,8 +84,6 @@ class GameServer:
             "players": list(self.players.keys()),
             "player_names": self.player_names,
             "spectator_names": list(self.spectator_names.values()),
-            # pass rule down to client explicitly too
-            "win_rule": self.board.win_rule,
         }
 
         # players
@@ -117,6 +110,29 @@ class GameServer:
                     del self.spectator_names[sid]
         self.spectators = alive_specs
 
+    def broadcast_shutdown(self):
+        payload = {"type": "shutdown"}
+        # to players
+        for sock in list(self.players.values()):
+            send(sock, payload)
+            try:
+                sock.close()
+            except:
+                pass
+        # to spectators
+        for sock in list(self.spectators):
+            send(sock, payload)
+            try:
+                sock.close()
+            except:
+                pass
+
+        self.players.clear()
+        self.spectators.clear()
+
+    # --------------------------------------------------
+    # client handler
+    # --------------------------------------------------
     def handle_client(self, sock: socket.socket, role: str):
         # tell client what they are
         send(sock, {
@@ -126,7 +142,6 @@ class GameServer:
             "connected_players": len(self.players),
             "player_names": self.player_names,
             "spectator_names": list(self.spectator_names.values()),
-            "win_rule": self.board.win_rule,
         })
         self.broadcast_state()
 
@@ -138,7 +153,7 @@ class GameServer:
 
                 mtype = msg.get("type")
 
-                # hello
+                # client introduces themselves
                 if mtype == "hello":
                     name = msg.get("name", "").strip()
                     if role in self.player_order:
@@ -150,7 +165,19 @@ class GameServer:
                     self.broadcast_state()
                     continue
 
-                # move
+                # host says "shutdown" -> kill room
+                if mtype == "shutdown":
+                    # ONLY allow the very first player (host) to do this
+                    host_mark = self.player_order[0]  # typically "X"
+                    if role == host_mark:
+                        self.running = False
+                        self.broadcast_shutdown()
+                        break
+                    else:
+                        # ignore if spectators or non-host try
+                        send(sock, {"type": "error", "message": "Only host can end the lobby"})
+                        continue
+
                 if mtype == "move":
                     if role not in self.player_order:
                         send(sock, {"type": "error", "message": "You are a spectator"})
@@ -174,7 +201,7 @@ class GameServer:
                             send(sock, {"type": "error", "message": "Illegal move"})
                             continue
 
-                        # advance turn only if game not over
+                        # advance turn if game not over
                         if not self.board.macro_winner and not self.board.macro_tied:
                             self.next_turn()
 
@@ -186,11 +213,18 @@ class GameServer:
             except:
                 pass
 
+    # --------------------------------------------------
+    # accept loop
+    # --------------------------------------------------
     def accept_loop(self, server_sock: socket.socket):
         while self.running:
-            client, addr = server_sock.accept()
+            try:
+                client, addr = server_sock.accept()
+            except OSError:
+                break
             print(f"[SERVER] connection from {addr}")
 
+            # choose role
             if len(self.players) < self.required_players:
                 role = self.player_order[len(self.players)]
                 self.players[role] = client
