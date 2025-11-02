@@ -344,10 +344,10 @@ def main():
     if logo_img:
         pygame.display.set_icon(logo_img)
 
-    ovalIcon = pygame.image.load("Images/ovalThing.png")
-    tearIcon = pygame.image.load("Images/tearThing.png")
-    circleSquareIcon = pygame.image.load("Images/circleSquareThing.png")
-    board_img = pygame.image.load("Images/emptyBoard.png")
+    ovalIcon = pygame.image.load("Images/oval.png")
+    tearIcon = pygame.image.load("Images/tear.png")
+    circleSquareIcon = pygame.image.load("Images/circleSquare.png")
+    board_img = pygame.image.load("Images/board.png")
 
     smallIcons = [
         "BLANK CELL",
