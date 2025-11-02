@@ -3,9 +3,10 @@ import socket
 import threading
 import pygame
 import os
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 
-from server import GameServer  # your updated server with 2-in-a-row big-board win
+# we import server so we can start it locally when we pick “host”
+from server import GameServer   # <-- your server.py with 2-in-a-row
 
 
 # =========================================================
@@ -23,25 +24,16 @@ SCREEN_HOST_LOBBY = "host_lobby"
 SCREEN_GAME = "game"
 
 # DARK PALETTE
-COLOR_BG = (15, 23, 42)          # slate-900
-COLOR_PANEL = (30, 41, 59)       # slate-800
-COLOR_PANEL_LIGHT = (51, 65, 85) # slate-700
+COLOR_BG = (15, 23, 42)
+COLOR_PANEL = (30, 41, 59)
+COLOR_PANEL_LIGHT = (51, 65, 85)
 COLOR_INPUT_BG = (15, 23, 42)
 COLOR_BORDER = (71, 85, 105)
 COLOR_TEXT = (248, 250, 252)
 COLOR_MUTED = (148, 163, 184)
 COLOR_ACCENT = (56, 189, 248)
+COLOR_RED = (248, 113, 113)
 
-# mapping server marks -> your icon indices
-MARK_TO_ICON = {
-    "O": 1,  # oval
-    "Z": 2,  # tear
-    "X": 3,  # circle-square
-    None: 0,
-    "": 0,
-}
-
-# button rects
 BTN_MENU_HOST = pygame.Rect(210, 260, 300, 56)
 BTN_MENU_JOIN = pygame.Rect(210, 330, 300, 56)
 BTN_BACK = pygame.Rect(30, 30, 90, 36)
@@ -106,7 +98,7 @@ def get_local_ip() -> str:
 
 
 # =========================================================
-# CLIENT STATE (FROM SERVER)
+# CLIENT STATE
 # =========================================================
 class ClientState:
     def __init__(self):
@@ -174,118 +166,151 @@ def draw_input(screen, rect, text, font, placeholder=""):
 
 
 # =========================================================
-# === NEW UTTT LOGIC: image-based board classes
+# === NEW UTTT LOGIC (image-based, aligned) ================
 # =========================================================
-class Board:
-    def __init__(self, icon, x=0, y=0, cover=""):
-        self.__icon = icon
-        self.__x = x
-        self.__y = y
-        self.__cells = [0] * 9
-        self.__filledCells = 0
-        self.__covered = False
-        self.__cover = cover
-        self.__winner = 0
-        self.__gameWinner = 0
-
-    def GetWinner(self):
-        return self._Board__winner
-
-    def SetWinner(self, playerNumber):
-        self._Board__winner = playerNumber
-
-    def GetCell(self, x, y):
-        return self._Board__cells[(x % 3) + 3 * (y % 3)]
-
-    def SetCell(self, x, y, player):
-        if Board.GetCell(self, x, y) == 0:
-            self._Board__cells[(x % 3) + 3 * (y % 3)] = player
-
-    def Display(self, screen):
-        screen.blit(self._Board__icon, (self._Board__x, self._Board__y))
+# We now ALLOW for 2 input sets:
+# - your images in /Images (board.png, oval.png, tear.png, circlesquare.png)
+# - OR fallback to plain draw if any is missing
 
 
-class Small_Board(Board):
-    def GetCover(self):
-        return self._Board__covered
+class SmallBoard:
+    # drawn at self.x, self.y (we will use exactly your original coords)
+    def __init__(self, x, y, board_img=None, cover_surf=None,
+                 oval=None, tear=None, cs=None):
+        self.x = x
+        self.y = y
+        self.w = 170
+        self.h = 170
+        self.cells: List[Optional[str]] = [None] * 9
+        self.covered = False
+        self.winner: Optional[str] = None
 
-    def SetCover(self, covered):
-        self._Board__covered = covered
+        # images (can be None)
+        self.board_img = board_img
+        self.cover_surf = cover_surf
+        self.oval = oval
+        self.tear = tear
+        self.cs = cs
 
-    def Display(self, screen, smallIcons, largeIcons):
-        # draw big icon if board is won
-        if self._Board__winner != 0:
-            screen.blit(largeIcons[self._Board__winner], (self._Board__x + 10, self._Board__y + 10))
+    def display(self, screen, font_cell):
+        # draw board base
+        if self.board_img:
+            screen.blit(self.board_img, (self.x, self.y))
+        else:
+            pygame.draw.rect(screen, (19, 28, 45), (self.x, self.y, self.w, self.h), border_radius=10)
+            # simple inner grid
+            for i in range(1, 3):
+                pygame.draw.line(screen, COLOR_BORDER,
+                                 (self.x + i * (self.w // 3), self.y),
+                                 (self.x + i * (self.w // 3), self.y + self.h), 2)
+                pygame.draw.line(screen, COLOR_BORDER,
+                                 (self.x, self.y + i * (self.h // 3)),
+                                 (self.x + self.w, self.y + i * (self.h // 3)), 2)
+
+        # if small board is already won -> draw big symbol
+        if self.winner:
+            # draw big centered text or image
+            if self.winner == "O" and self.oval:
+                big = pygame.transform.smoothscale(self.oval, (150, 150))
+                screen.blit(big, (self.x + 10, self.y + 10))
+            elif self.winner == "Z" and self.tear:
+                big = pygame.transform.smoothscale(self.tear, (150, 150))
+                screen.blit(big, (self.x + 10, self.y + 10))
+            elif self.winner == "X" and self.cs:
+                big = pygame.transform.smoothscale(self.cs, (150, 150))
+                screen.blit(big, (self.x + 10, self.y + 10))
+            else:
+                t = font_cell.render(self.winner, True, COLOR_TEXT)
+                screen.blit(t, t.get_rect(center=(self.x + self.w // 2, self.y + self.h // 2)))
             return
 
-        screen.blit(self._Board__icon, (self._Board__x, self._Board__y))
-        cellShifts = [
-            [2.8, 4.2], [62.5, 4.2], [122.2, 4.2],
-            [2.8, 62.5], [62.5, 62.5], [122.2, 62.5],
-            [2.8, 122.2], [62.5, 122.2], [122.2, 122.2]
+        # draw 9 cells
+        cell_positions = [
+            (2.8, 4.2), (62.5, 4.2), (122.2, 4.2),
+            (2.8, 62.5), (62.5, 62.5), (122.2, 62.5),
+            (2.8, 122.2), (62.5, 122.2), (122.2, 122.2)
         ]
-        for i in range(9):
-            cellIcon = self._Board__cells[i]
-            if isinstance(cellIcon, int) and cellIcon != 0:
-                icon_surf = smallIcons[cellIcon]
-                if icon_surf != "BLANK CELL":
-                    screen.blit(icon_surf, (self._Board__x + cellShifts[i][0], self._Board__y + cellShifts[i][1]))
+        for i, mark in enumerate(self.cells):
+            if not mark:
+                continue
+            cx, cy = cell_positions[i]
+            if mark == "O" and self.oval:
+                img = pygame.transform.smoothscale(self.oval, (45, 45))
+                screen.blit(img, (self.x + cx, self.y + cy))
+            elif mark == "Z" and self.tear:
+                img = pygame.transform.smoothscale(self.tear, (45, 45))
+                screen.blit(img, (self.x + cx, self.y + cy))
+            elif mark == "X" and self.cs:
+                img = pygame.transform.smoothscale(self.cs, (45, 45))
+                screen.blit(img, (self.x + cx, self.y + cy))
+            else:
+                # text fallback
+                t = font_cell.render(mark, True, COLOR_TEXT)
+                rect = t.get_rect(center=(self.x + cx + 22, self.y + cy + 22))
+                screen.blit(t, rect)
 
-        if self._Board__covered:
-            screen.blit(self._Board__cover, (self._Board__x - 2.5, self._Board__y - 2))
+        # cover
+        if self.covered and self.cover_surf:
+            screen.blit(self.cover_surf, (self.x - 2, self.y - 2))
+        elif self.covered:
+            cover = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+            cover.fill((0, 0, 0, 90))
+            screen.blit(cover, (self.x, self.y))
 
-    def DetectCellClick(self, x, y) -> int:
-        if self._Board__winner != 0 or self.GetCover():
+    def detect_click(self, mx, my) -> int:
+        """Return small cell index 0..8 OR -1 if not inside/covered/won."""
+        if self.winner or self.covered:
+            return -1
+        if not (self.x <= mx <= self.x + self.w and self.y <= my <= self.y + self.h):
             return -1
 
-        cellShifts = [
-            [2.8, 4.2], [62.5, 4.2], [122.2, 4.2],
-            [2.8, 62.5], [62.5, 62.5], [122.2, 62.5],
-            [2.8, 122.2], [62.5, 122.2], [122.2, 122.2]
+        # these are EXACTLY the numbers you had in your original local script
+        cell_positions = [
+            (2.8, 4.2), (62.5, 4.2), (122.2, 4.2),
+            (2.8, 62.5), (62.5, 62.5), (122.2, 62.5),
+            (2.8, 122.2), (62.5, 122.2), (122.2, 122.2)
         ]
-        cellSize = 45
+        cell_size = 45
 
-        for i in range(9):
-            cellX = self._Board__x + cellShifts[i][0]
-            cellY = self._Board__y + cellShifts[i][1]
-            if x >= cellX and x <= cellX + cellSize and y >= cellY and y <= cellY + cellSize:
+        for i, (cx, cy) in enumerate(cell_positions):
+            sx = self.x + cx
+            sy = self.y + cy
+            if sx <= mx <= sx + cell_size and sy <= my <= sy + cell_size:
                 return i
         return -1
 
 
-class Big_Board(Board):
-    def GetGameWinner(self):
-        return self._Board__gameWinner
+def make_image_boards():
+    # try to load your images
+    board_img = load_image("Images/board.png")
+    oval_img = load_image("Images/oval.png")
+    tear_img = load_image("Images/tear.png")
+    cs_img = load_image("Images/circlesquare.png")
 
-    def SetGameWinner(self, player):
-        self._Board__gameWinner = player
+    # make covers
+    board_covers = []
+    for _ in range(9):
+        cov = pygame.Surface((175, 175), pygame.SRCALPHA)
+        cov.fill((0, 0, 0, 50))
+        board_covers.append(cov)
 
-    def UpdateBoardWins(self, boards):
-        for i in range(9):
-            self.SetCell(i % 3, int(i / 3), boards[i].GetWinner())
-
-
-def detect_board_from_pos(x, y) -> int:
-    # same grid your original code used
-    if x < 215:
-        col = 0
-    elif x < 420:
-        col = 1
-    else:
-        col = 2
-
-    if y < 215:
-        row = 0
-    elif y < 420:
-        row = 1
-    else:
-        row = 2
-
-    return row * 3 + col
+    # IMPORTANT: use your ORIGINAL positions so clicks line up
+    boards = [
+        SmallBoard(10, 15,  board_img, board_covers[0], oval_img, tear_img, cs_img),
+        SmallBoard(215, 15, board_img, board_covers[1], oval_img, tear_img, cs_img),
+        SmallBoard(420, 15, board_img, board_covers[2], oval_img, tear_img, cs_img),
+        SmallBoard(10, 215, board_img, board_covers[3], oval_img, tear_img, cs_img),
+        SmallBoard(215, 215, board_img, board_covers[4], oval_img, tear_img, cs_img),
+        SmallBoard(420, 215, board_img, board_covers[5], oval_img, tear_img, cs_img),
+        SmallBoard(10, 420, board_img, board_covers[6], oval_img, tear_img, cs_img),
+        SmallBoard(215, 420, board_img, board_covers[7], oval_img, tear_img, cs_img),
+        SmallBoard(420, 420, board_img, board_covers[8], oval_img, tear_img, cs_img),
+    ]
+    return boards
 
 
-def sync_from_server_to_boards(server_board: Dict, boards: List[Small_Board]):
-    """Push server game state into our visual boards."""
+def sync_from_server_to_boards(server_board: Dict, boards: List[SmallBoard]):
+    """Take server board (grids, next_forced, big_wins) and push into our objects."""
     if not server_board:
         return
 
@@ -293,105 +318,50 @@ def sync_from_server_to_boards(server_board: Dict, boards: List[Small_Board]):
     next_forced = server_board.get("next_forced", None)
     big_wins = server_board.get("big_wins", [None] * 9)
 
-    for b in range(9):
-        sb = boards[b]
-        cells = grids[b] if b < len(grids) else [None] * 9
+    for i in range(9):
+        sb = boards[i]
+        sb.cells = grids[i][:] if i < len(grids) else [None] * 9
+        sb.winner = big_wins[i] if i < len(big_wins) else None
 
-        filled = 0
-        for i in range(9):
-            mark = cells[i]
-            idx = MARK_TO_ICON.get(mark, 0)
-            sb._Board__cells[i] = idx
-            if idx != 0:
-                filled += 1
-        sb._Board__filledCells = filled
-
-        # set winner if server says so
-        if b < len(big_wins) and big_wins[b]:
-            sb._Board__winner = MARK_TO_ICON.get(big_wins[b], 0)
-        else:
-            # don't force-clear; just leave it
-            pass
-
-    # cover logic
+    # cover logic (forced board)
     if next_forced is not None and 0 <= next_forced < 9:
         for i in range(9):
-            if i == next_forced:
-                boards[i].SetCover(False)
-            else:
-                boards[i].SetCover(True)
+            boards[i].covered = (i != next_forced)
     else:
         for i in range(9):
-            boards[i].SetCover(False)
+            boards[i].covered = False
 # =========================================================
-# === END NEW UTTT LOGIC
+# === END UTTT LOGIC ======================================
 # =========================================================
 
 
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Ultimate Noughts and Crosses (Dark)")
+    pygame.display.set_caption("Ultimate Noughts and Crosses (dark + images)")
 
     clock = pygame.time.Clock()
 
+    # fonts
     font_title = pygame.font.SysFont("Segoe UI", 42, bold=True)
     font_body = pygame.font.SysFont("Segoe UI", 22)
-    font_small = pygame.font.SysFont("Segoe UI", 18)
+    font_small = pygame.font.SysFont("Segoe UI", 16)
+    font_cell = pygame.font.SysFont("Segoe UI", 28, bold=True)
 
-    # === NEW UTTT LOGIC: load images ===
-    logo_img = pygame.image.load("Images/logo.png")
-    if logo_img:
-        pygame.display.set_icon(logo_img)
+    # menu backgrounds (optional)
+    bg_username = load_image("Images/username.png")
+    bg_mainmenu = load_image("Images/mainmenu.png")
+    bg_hostchoice = load_image("Images/hostchoice.png")
+    bg_enterip = load_image("Images/enterip.png")
+    bg_hostlobby = load_image("Images/hostlobby.png")
+    logo = load_image("Images/logo.png")
+    if logo:
+        pygame.display.set_icon(logo)
 
-    ovalIcon = pygame.image.load("Images/oval.png")
-    tearIcon = pygame.image.load("Images/tear.png")
-    circleSquareIcon = pygame.image.load("Images/circleSquare.png")
-    board_img = pygame.image.load("Images/board.png")
+    # 9 game boards
+    uttt_boards = make_image_boards()
 
-    smallIcons = [
-        "BLANK CELL",
-        pygame.transform.scale(ovalIcon, (45, 45)) if ovalIcon else "BLANK CELL",
-        pygame.transform.scale(tearIcon, (45, 45)) if tearIcon else "BLANK CELL",
-        pygame.transform.scale(circleSquareIcon, (45, 45)) if circleSquareIcon else "BLANK CELL",
-    ]
-    largeIcons = [
-        "BLANK CELL",
-        pygame.transform.scale(ovalIcon, (150, 150)) if ovalIcon else "BLANK CELL",
-        pygame.transform.scale(tearIcon, (150, 150)) if tearIcon else "BLANK CELL",
-        pygame.transform.scale(circleSquareIcon, (150, 150)) if circleSquareIcon else "BLANK CELL",
-    ]
-    smallBoardImg = pygame.transform.scale(board_img, (170, 170)) 
-    largeBoardImg = pygame.transform.scale(board_img, (600, 600)) 
-
-    boardCovers = []
-    for _ in range(9):
-        cover = pygame.Surface((175, 175), pygame.SRCALPHA)
-        cover.fill((0, 0, 0, 50))
-        boardCovers.append(cover)
-
-    # make 9 boards in positions (same as original)
-    mainBoard = Big_Board(largeBoardImg if largeBoardImg else pygame.Surface((600, 600)))
-    boardTL = Small_Board(smallBoardImg, 10, 15, boardCovers[0])
-    boardTM = Small_Board(smallBoardImg, 215, 15, boardCovers[1])
-    boardTR = Small_Board(smallBoardImg, 420, 15, boardCovers[2])
-
-    boardML = Small_Board(smallBoardImg, 10, 215, boardCovers[3])
-    boardMM = Small_Board(smallBoardImg, 215, 215, boardCovers[4])
-    boardMR = Small_Board(smallBoardImg, 420, 215, boardCovers[5])
-
-    boardBL = Small_Board(smallBoardImg, 10, 420, boardCovers[6])
-    boardBM = Small_Board(smallBoardImg, 215, 420, boardCovers[7])
-    boardBR = Small_Board(smallBoardImg, 420, 420, boardCovers[8])
-
-    uttt_boards = [
-        boardTL, boardTM, boardTR,
-        boardML, boardMM, boardMR,
-        boardBL, boardBM, boardBR
-    ]
-    # === END NEW UTTT LOGIC
-
-    # runtime state
+    # runtime
     screen_mode = SCREEN_USERNAME
     username = ""
     ip_text = ""
@@ -481,66 +451,80 @@ def main():
                         if e.unicode.isdigit() or e.unicode in (".", ":"):
                             ip_text += e.unicode
 
-            # GAME (online) -- handle clicks
+            # GAME
             elif screen_mode == SCREEN_GAME:
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     mx, my = e.pos
-                    # === NEW UTTT LOGIC: click -> (big, small) -> send
-                    if 0 <= mx <= 620 and 0 <= my <= 620:
-                        b_idx = detect_board_from_pos(mx, my)
-                        if 0 <= b_idx < 9:
-                            cell_idx = uttt_boards[b_idx].DetectCellClick(mx, my)
-                            if cell_idx != -1 and client_socket and client_state.board:
+                    # IMPORTANT: no offset now, we use exact board coords
+                    for idx, sb in enumerate(uttt_boards):
+                        cell_idx = sb.detect_click(mx, my)
+                        if cell_idx != -1:
+                            if client_socket and client_state.board:
                                 send(client_socket, {
                                     "type": "move",
-                                    "big": b_idx,
+                                    "big": idx,
                                     "small": cell_idx
                                 })
-                    # === END NEW UTTT LOGIC
+                            break
 
-        # =====================================================
+        # =================================================
         # DRAW
-        # =====================================================
+        # =================================================
         if screen_mode == SCREEN_USERNAME:
-            screen.fill(COLOR_BG)
+            if bg_username:
+                screen.blit(bg_username, (0, 0))
+            else:
+                screen.fill(COLOR_BG)
             title = font_title.render("Enter username", True, COLOR_TEXT)
-            screen.blit(title, title.get_rect(center=(WIDTH // 2, 140)))
+            screen.blit(title, (60, 90))
             input_rect = pygame.Rect(140, 240, 440, 56)
             draw_input(screen, input_rect, username, font_body, "your name")
             hint = font_small.render("Press Enter (cannot be empty)", True, COLOR_MUTED)
-            screen.blit(hint, hint.get_rect(center=(WIDTH // 2, 320)))
+            screen.blit(hint, (160, 310))
 
         elif screen_mode == SCREEN_MENU:
-            screen.fill(COLOR_BG)
+            if bg_mainmenu:
+                screen.blit(bg_mainmenu, (0, 0))
+            else:
+                screen.fill(COLOR_BG)
             title = font_title.render("Ultimate Noughts and Crosses", True, COLOR_TEXT)
-            screen.blit(title, title.get_rect(center=(WIDTH // 2, 110)))
+            screen.blit(title, (60, 90))
             hello = font_small.render(f"Hi {username}", True, COLOR_MUTED)
             screen.blit(hello, (20, 20))
             draw_button(screen, BTN_MENU_HOST, "HOST A GAME", font_body, variant="primary")
             draw_button(screen, BTN_MENU_JOIN, "JOIN A GAME", font_body)
 
         elif screen_mode == SCREEN_HOST_CHOICE:
-            screen.fill(COLOR_BG)
+            if bg_hostchoice:
+                screen.blit(bg_hostchoice, (0, 0))
+            else:
+                screen.fill(COLOR_BG)
             draw_button(screen, BTN_BACK, "Back", font_small)
             title = font_title.render("Host: choose players", True, COLOR_TEXT)
-            screen.blit(title, title.get_rect(center=(WIDTH // 2, 130)))
+            screen.blit(title, (60, 100))
             draw_button(screen, BTN_HOST_2, "2 PLAYERS", font_body, variant="primary")
             draw_button(screen, BTN_HOST_3, "3 PLAYERS", font_body)
 
         elif screen_mode == SCREEN_IP_INPUT:
-            screen.fill(COLOR_BG)
+            if bg_enterip:
+                screen.blit(bg_enterip, (0, 0))
+            else:
+                screen.fill(COLOR_BG)
             draw_button(screen, BTN_BACK, "Back", font_small)
             title = font_title.render("Join a game", True, COLOR_TEXT)
-            screen.blit(title, title.get_rect(center=(WIDTH // 2, 130)))
+            screen.blit(title, (60, 100))
             input_rect = pygame.Rect(140, 230, 440, 56)
             draw_input(screen, input_rect, ip_text, font_body, "host IP (e.g. 10.0.0.5)")
             if join_error:
-                err = font_small.render(join_error, True, (248, 113, 113))
-                screen.blit(err, err.get_rect(center=(WIDTH // 2, 320)))
+                err = font_small.render(join_error, True, COLOR_RED)
+                screen.blit(err, (140, 300))
 
         elif screen_mode == SCREEN_HOST_LOBBY:
-            screen.fill(COLOR_BG)
-            # header card
+            if bg_hostlobby:
+                screen.blit(bg_hostlobby, (0, 0))
+            else:
+                screen.fill(COLOR_BG)
+
             pygame.draw.rect(screen, COLOR_PANEL, (80, 40, 560, 120), border_radius=18)
             h1 = font_body.render("Hosting game", True, COLOR_TEXT)
             screen.blit(h1, (100, 60))
@@ -553,7 +537,6 @@ def main():
             ip_surf = font_body.render(host_local_ip, True, COLOR_TEXT)
             screen.blit(ip_surf, ip_surf.get_rect(center=ip_rect.center))
 
-            # player list
             pygame.draw.rect(screen, COLOR_PANEL, (80, 210, 560, 220), border_radius=18)
             status = font_body.render(
                 f"Players: {client_state.connected_players}/{client_state.required_players}",
@@ -569,57 +552,41 @@ def main():
                     screen.blit(line, (120, y))
                     y += 26
 
-            # auto-start
             if client_state.connected_players >= client_state.required_players:
                 screen_mode = SCREEN_GAME
 
         elif screen_mode == SCREEN_GAME:
-            # draw dark background
+            # **important**: no background image here, we want clear board
             screen.fill(COLOR_BG)
 
-            # sync remote state into local boards
+            # sync server -> local boards
             sync_from_server_to_boards(client_state.board, uttt_boards)
 
-            # draw main big board area
-            # center it a bit – but your board is 600x600, so we can just put at (60,50)
-            if mainBoard._Board__icon:
-                screen.blit(mainBoard._Board__icon, (60, 50))
-            else:
-                pygame.draw.rect(screen, (19, 28, 45), (60, 50, 600, 600), border_radius=20)
-
-            # draw 9 small boards
-            # but they were positioned for (0,0) so we shift temporarily? to keep it simple, we keep (0,0) style
-            # you placed them at 10/215/420 etc so we can just blit with +50 offset
-            offset_x = 60 - 0
-            offset_y = 50 - 0
-            for i, b in enumerate(uttt_boards):
-                # we need to temporarily move board to offset for drawing, then restore
-                old_x = b._Board__x
-                old_y = b._Board__y
-                b._Board__x = old_x + offset_x
-                b._Board__y = old_y + offset_y
-                b.Display(screen, smallIcons, largeIcons)
-                b._Board__x = old_x
-                b._Board__y = old_y
+            # draw all 9 boards at EXACT coords (10,15 etc.) — so clicks match!
+            for i, sb in enumerate(uttt_boards):
+                forced = False
+                if client_state.board and client_state.board.get("next_forced") is not None:
+                    forced = (i == client_state.board["next_forced"])
+                # we don't actually need "forced" here because the board itself already has covered=True
+                sb.display(screen, font_cell)
 
             # HUD
-            pygame.draw.rect(screen, COLOR_BG, (0, 0, WIDTH, 40))
             hud_txt = f"Turn: {client_state.turn}  |  Players: {client_state.connected_players}/{client_state.required_players}"
             if client_state.you_are:
                 pname = client_state.player_names.get(client_state.you_are, "")
                 hud_txt = f"You: {pname} ({client_state.you_are})  |  {hud_txt}"
             hud_surf = font_small.render(hud_txt, True, COLOR_TEXT)
-            screen.blit(hud_surf, (15, 10))
+            screen.blit(hud_surf, (12, 8))
 
-            # server might send big_winner (when 2-in-a-row)
+            # big winner (server-side 2-in-a-row)
             if client_state.board and client_state.board.get("big_winner"):
                 win_txt = f"Winner: {client_state.board['big_winner']}"
-                win_surf = font_title.render(win_txt, True, (248, 113, 113))
-                screen.blit(win_surf, win_surf.get_rect(center=(WIDTH // 2, 680)))
+                win_surf = font_title.render(win_txt, True, COLOR_RED)
+                screen.blit(win_surf, win_surf.get_rect(center=(WIDTH // 2, 690)))
 
             if client_state.last_error:
-                err = font_small.render(client_state.last_error, True, (248, 113, 113))
-                screen.blit(err, (15, HEIGHT - 28))
+                err_surf = font_small.render(client_state.last_error, True, COLOR_RED)
+                screen.blit(err_surf, (12, HEIGHT - 28))
 
         pygame.display.flip()
         clock.tick(60)
