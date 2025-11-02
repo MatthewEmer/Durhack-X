@@ -1,114 +1,146 @@
 # common.py
-from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Dict
 
-# Players: 'X' and 'O'
-Player = str
-Move = Tuple[int, int]  # (big_idx 0..8, small_idx 0..8)
+"""
+Shared game logic for Ultimate Tic Tac Toe.
+Used by both server.py and client.py.
 
-WIN_TRIPLES = [
-    (0,1,2),(3,4,5),(6,7,8),  # rows
-    (0,3,6),(1,4,7),(2,5,8),  # cols
-    (0,4,8),(2,4,6)           # diags
+Board layout:
+- 9 big boards (index 0..8), arranged 3x3
+- each big board has 9 cells (index 0..8), arranged 3x3
+
+We track:
+- per-small-board winner ("X","O","Z","T","")
+- macro winner (someone wins 3 small boards in a row)
+- next_forced: which big board the next player MUST play in
+"""
+
+from typing import List, Optional, Tuple
+
+
+WIN_LINES = [
+    (0, 1, 2),
+    (3, 4, 5),
+    (6, 7, 8),
+    (0, 3, 6),
+    (1, 4, 7),
+    (2, 5, 8),
+    (0, 4, 8),
+    (2, 4, 6),
 ]
 
-def winner_of(cells: List[Optional[Player]]) -> Optional[Player]:
-    for a,b,c in WIN_TRIPLES:
-        if cells[a] and cells[a] == cells[b] == cells[c]:
-            return cells[a]
-    return None
 
-def board_full(cells: List[Optional[Player]]) -> bool:
-    return all(c is not None for c in cells)
-
-@dataclass
 class SmallBoard:
-    cells: List[Optional[Player]] = field(default_factory=lambda: [None]*9)
-    won_by: Optional[Player] = None
-    tied: bool = False
+    def __init__(self):
+        # 9 cells, "" means empty
+        self.cells: List[str] = [""] * 9
+        self.winner: str = ""  # "X","O","Z","T",""
+        self.tied: bool = False
 
-    def play(self, p: Player, idx: int) -> bool:
-        if self.won_by or self.tied: return False
-        if not (0 <= idx < 9): return False
-        if self.cells[idx] is not None: return False
-        self.cells[idx] = p
-        w = winner_of(self.cells)
-        if w:
-            self.won_by = w
-        elif board_full(self.cells):
-            self.tied = True
+    def is_full(self) -> bool:
+        return all(c != "" for c in self.cells)
+
+    def apply(self, mark: str, idx: int) -> bool:
+        """Attempt to place mark at cell idx (0..8). Return True if success."""
+        if not (0 <= idx < 9):
+            return False
+        if self.cells[idx] != "":
+            return False
+        if self.winner:
+            return False
+        self.cells[idx] = mark
+        self._update_status()
         return True
 
-@dataclass
+    def _update_status(self):
+        # check win
+        for a, b, c in WIN_LINES:
+            if self.cells[a] and self.cells[a] == self.cells[b] == self.cells[c]:
+                self.winner = self.cells[a]
+                return
+        # check tie
+        if self.is_full() and not self.winner:
+            self.tied = True
+            self.winner = "T"  # tie
+
+    def serialize(self) -> List[str]:
+        return list(self.cells)
+
+
 class UltimateBoard:
-    grids: List[SmallBoard] = field(default_factory=lambda: [SmallBoard() for _ in range(9)])
-    macro: List[Optional[Player]] = field(default_factory=lambda: [None]*9)  # who won each small board (cached)
-    macro_winner: Optional[Player] = None
-    macro_tied: bool = False
-    next_forced: Optional[int] = None  # which small board index must be played next; None means free choice
+    def __init__(self):
+        self.boards: List[SmallBoard] = [SmallBoard() for _ in range(9)]
+        self.grid_winners: List[str] = [""] * 9  # each is "", "X","O","Z","T"
+        self.macro_winner: str = ""  # if someone wins 3 small boards
+        self.macro_tied: bool = False
+        # -1 means "free move" (no forced board)
+        self.next_forced: int = -1
 
     def _update_macro(self):
-        for i, sb in enumerate(self.grids):
-            self.macro[i] = sb.won_by if sb.won_by else (None if not sb.tied else 'T')  # 'T' to mark tied boards
-        # A macro square counts as owned by the winner only, ties don't help win macro
-        macro_cells = [g.won_by for g in self.grids]
-        w = winner_of(macro_cells)
-        if w:
-            self.macro_winner = w
-            return
-        # full macro tie?
-        if all(g.won_by or g.tied for g in self.grids):
+        # update per-board winners list
+        for i, sb in enumerate(self.boards):
+            self.grid_winners[i] = sb.winner
+
+        # check macro win (only real players, ignore "T")
+        for a, b, c in WIN_LINES:
+            wa, wb, wc = self.grid_winners[a], self.grid_winners[b], self.grid_winners[c]
+            if wa and wa == wb == wc and wa != "T":
+                self.macro_winner = wa
+                return
+
+        # check macro tie: all 9 small boards are decided (winner or T)
+        if all(w != "" for w in self.grid_winners) and not self.macro_winner:
             self.macro_tied = True
 
-    def legal_moves(self, player_to_move: Player) -> List[Move]:
-        if self.macro_winner or self.macro_tied:
-            return []
-        boards_to_consider = range(9) if self.next_forced is None else [self.next_forced]
-        moves: List[Move] = []
-        for b in boards_to_consider:
-            sb = self.grids[b]
-            if sb.won_by or sb.tied: 
-                continue
-            for i in range(9):
-                if sb.cells[i] is None:
-                    moves.append((b, i))
-        # If forced board is closed, player can play anywhere open
-        if not moves and self.next_forced is not None:
-            for b in range(9):
-                sb = self.grids[b]
-                if sb.won_by or sb.tied: 
-                    continue
-                for i in range(9):
-                    if sb.cells[i] is None:
-                        moves.append((b, i))
-        return moves
+    def apply(self, mark: str, move: Tuple[int, int]) -> bool:
+        """
+        move = (big_idx, small_idx)
+        Enforces forced-board rule:
+          - if next_forced >=0 and that board is still playable, you MUST play there
+          - otherwise you can play anywhere valid
+        Returns True if move applied.
+        """
+        big_idx, small_idx = move
 
-    def apply(self, player_to_move: Player, move: Move) -> bool:
-        b, i = move
-        # Validate move
-        legal = self.legal_moves(player_to_move)
-        if move not in legal:
+        # basic bounds check
+        if not (0 <= big_idx < 9 and 0 <= small_idx < 9):
             return False
-        # Play
-        ok = self.grids[b].play(player_to_move, i)
-        if not ok: 
+
+        # if there is a forced board, check it is still active
+        if self.next_forced >= 0:
+            forced_board = self.boards[self.next_forced]
+            # if forced board is still playable, you must play there
+            if not forced_board.winner and not forced_board.tied:
+                if big_idx != self.next_forced:
+                    return False
+            else:
+                # forced board is dead, so the player can play anywhere
+                self.next_forced = -1
+
+        # now actually try to apply to chosen board
+        board = self.boards[big_idx]
+        ok = board.apply(mark, small_idx)
+        if not ok:
             return False
-        # Update macro status
+
+        # after a move, work out next forced board
+        target_board = self.boards[small_idx]
+        if not target_board.winner and not target_board.tied:
+            self.next_forced = small_idx
+        else:
+            self.next_forced = -1
+
+        # update macro
         self._update_macro()
-        # Set next forced board
-        self.next_forced = i
-        # If next forced board is already won/tied/full -> free choice next
-        sb = self.grids[self.next_forced]
-        if sb.won_by or sb.tied or board_full(sb.cells):
-            self.next_forced = None
         return True
 
-    def serialize(self) -> Dict:
+    def serialize(self) -> dict:
+        """
+        Return a JSON-serializable snapshot for clients.
+        """
         return {
-            "grids": [[cell if cell is not None else "" for cell in sb.cells] for sb in self.grids],
-            "grid_winners": [g.won_by if g.won_by else ("" if not g.tied else "T") for g in self.grids],
-            "macro_winner": self.macro_winner or "",
+            "grids": [sb.serialize() for sb in self.boards],
+            "grid_winners": list(self.grid_winners),
+            "next_forced": self.next_forced,
+            "macro_winner": self.macro_winner,
             "macro_tied": self.macro_tied,
-            "next_forced": self.next_forced if self.next_forced is not None else -1,
         }
