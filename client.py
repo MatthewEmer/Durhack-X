@@ -340,14 +340,14 @@ def main():
     font_small = pygame.font.SysFont("Segoe UI", 18)
 
     # === NEW UTTT LOGIC: load images ===
-    logo_img = load_image("Images/logo.png")
+    logo_img = pygame.image.load("Images/logo.png")
     if logo_img:
         pygame.display.set_icon(logo_img)
 
-    ovalIcon = load_image("Images/ovalThing.png")
-    tearIcon = load_image("Images/tearThing.png")
-    circleSquareIcon = load_image("Images/circleSquareThing.png")
-    board_img = load_image("Images/emptyBoard.png")
+    ovalIcon = pygame.image.load("Images/ovalThing.png")
+    tearIcon = pygame.image.load("Images/tearThing.png")
+    circleSquareIcon = pygame.image.load("Images/circleSquareThing.png")
+    board_img = pygame.image.load("Images/emptyBoard.png")
 
     smallIcons = [
         "BLANK CELL",
@@ -361,8 +361,8 @@ def main():
         pygame.transform.scale(tearIcon, (150, 150)) if tearIcon else "BLANK CELL",
         pygame.transform.scale(circleSquareIcon, (150, 150)) if circleSquareIcon else "BLANK CELL",
     ]
-    smallBoardImg = pygame.transform.scale(board_img, (170, 170)) if board_img else None
-    largeBoardImg = pygame.transform.scale(board_img, (600, 600)) if board_img else None
+    smallBoardImg = pygame.transform.scale(board_img, (170, 170)) 
+    largeBoardImg = pygame.transform.scale(board_img, (600, 600)) 
 
     boardCovers = []
     for _ in range(9):
