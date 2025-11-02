@@ -1,4 +1,3 @@
-# server.py
 import json
 import socket
 import threading
@@ -41,6 +40,9 @@ class GameServer:
     required_players: 2 or 3
     players: X,O,(Z)
     late joiners -> spectators
+
+    GAME RULE (2025-11-02):
+    - macro win when a player owns 2 adjacent small boards (see common.py)
     """
     def __init__(self, required_players: int = 2):
         assert required_players in (2, 3)
@@ -79,6 +81,8 @@ class GameServer:
             "players": list(self.players.keys()),
             "player_names": self.player_names,
             "spectator_names": list(self.spectator_names.values()),
+            # tell clients what rule we are using
+            "win_rule": "adjacent-2",
         }
 
         # players
@@ -101,7 +105,6 @@ class GameServer:
                 send(s, state)
                 alive_specs.append(s)
             except OSError:
-                # drop name
                 sid = id(s)
                 if sid in self.spectator_names:
                     del self.spectator_names[sid]
@@ -116,6 +119,7 @@ class GameServer:
             "connected_players": len(self.players),
             "player_names": self.player_names,
             "spectator_names": list(self.spectator_names.values()),
+            "win_rule": "adjacent-2",
         })
         self.broadcast_state()
 
@@ -162,7 +166,7 @@ class GameServer:
                             send(sock, {"type": "error", "message": "Illegal move"})
                             continue
 
-                        # advance turn if game not over
+                        # advance turn only if game not over
                         if not self.board.macro_winner and not self.board.macro_tied:
                             self.next_turn()
 

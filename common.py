@@ -1,5 +1,3 @@
-# common.py
-
 """
 Shared game logic for Ultimate Tic Tac Toe.
 Used by both server.py and client.py.
@@ -8,15 +6,17 @@ Board layout:
 - 9 big boards (index 0..8), arranged 3x3
 - each big board has 9 cells (index 0..8), arranged 3x3
 
-We track:
-- per-small-board winner ("X","O","Z","T","")
-- macro winner (someone wins 3 small boards in a row)
-- next_forced: which big board the next player MUST play in
+NEW MACRO RULE (2025-11-02):
+- a player wins the macro board if they own **2 adjacent** big squares
+  (horizontal, vertical, or diagonal)
+- if all 9 small boards are decided (won or tied) and nobody has 2 adjacent,
+  the macro board is tied.
 """
 
 from typing import List, Optional, Tuple
 
 
+# normal small-board win lines (3 in a row)
 WIN_LINES = [
     (0, 1, 2),
     (3, 4, 5),
@@ -26,6 +26,25 @@ WIN_LINES = [
     (2, 5, 8),
     (0, 4, 8),
     (2, 4, 6),
+]
+
+# NEW: macro board checks *adjacent pairs*, not 3-in-a-row
+# indices:
+#   0 1 2
+#   3 4 5
+#   6 7 8
+ADJACENT_MACRO_PAIRS = [
+    # rows
+    (0, 1), (1, 2),
+    (3, 4), (4, 5),
+    (6, 7), (7, 8),
+    # columns
+    (0, 3), (3, 6),
+    (1, 4), (4, 7),
+    (2, 5), (5, 8),
+    # diagonals through centre
+    (0, 4), (4, 8),
+    (2, 4), (4, 6),
 ]
 
 
@@ -70,26 +89,36 @@ class UltimateBoard:
     def __init__(self):
         self.boards: List[SmallBoard] = [SmallBoard() for _ in range(9)]
         self.grid_winners: List[str] = [""] * 9  # each is "", "X","O","Z","T"
-        self.macro_winner: str = ""  # if someone wins 3 small boards
+        self.macro_winner: str = ""  # if someone wins macro
         self.macro_tied: bool = False
         # -1 means "free move" (no forced board)
         self.next_forced: int = -1
 
     def _update_macro(self):
-        # update per-board winners list
+        """
+        Update macro win/tie based on NEW RULE:
+        - if any *adjacent pair* of small boards is won by the same real player (not "T"),
+          that player wins the macro board
+        - otherwise, if all 9 small boards are decided (winner or T) -> macro_tied
+        """
+        # update list of per-board winners
         for i, sb in enumerate(self.boards):
             self.grid_winners[i] = sb.winner
 
-        # check macro win (only real players, ignore "T")
-        for a, b, c in WIN_LINES:
-            wa, wb, wc = self.grid_winners[a], self.grid_winners[b], self.grid_winners[c]
-            if wa and wa == wb == wc and wa != "T":
+        # check adjacent pairs (our new win condition)
+        for a, b in ADJACENT_MACRO_PAIRS:
+            wa = self.grid_winners[a]
+            wb = self.grid_winners[b]
+            if wa and wa == wb and wa != "T":
                 self.macro_winner = wa
+                self.macro_tied = False
                 return
 
-        # check macro tie: all 9 small boards are decided (winner or T)
-        if all(w != "" for w in self.grid_winners) and not self.macro_winner:
+        # if no winner, see if everything is decided -> tie
+        if all(w != "" for w in self.grid_winners):
             self.macro_tied = True
+        else:
+            self.macro_tied = False
 
     def apply(self, mark: str, move: Tuple[int, int]) -> bool:
         """
@@ -129,7 +158,7 @@ class UltimateBoard:
         else:
             self.next_forced = -1
 
-        # update macro
+        # update macro using NEW rule
         self._update_macro()
         return True
 
