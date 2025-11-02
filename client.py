@@ -157,6 +157,61 @@ def draw_input(screen, rect, text, font, placeholder=""):
 
 
 # ---------------------------------------------------------
+# LOCAL WIN CHECK (client-side)
+# ---------------------------------------------------------
+def client_evaluate_macro(board_dict: dict) -> Tuple[str, bool]:
+    """
+    Try to infer the winner from the 9 big squares, even if the server didn't set macro_winner.
+    Rules:
+    1) If any adjacent pair (horizontal/vertical) is the same non-empty, non-T -> that mark wins
+       (this is your custom "2 big squares next to each other = win")
+    2) Else, classic 3-in-a-row ultimate check
+    3) Else, if all 9 are decided (winner or T) -> draw
+    """
+    winners = board_dict.get("grid_winners", [])
+    if not winners or len(winners) < 9:
+        return "", False
+
+    # 1) pair rule
+    pair_indices = [
+        # horizontal pairs
+        (0, 1), (1, 2),
+        (3, 4), (4, 5),
+        (6, 7), (7, 8),
+        # vertical pairs
+        (0, 3), (3, 6),
+        (1, 4), (4, 7),
+        (2, 5), (5, 8),
+    ]
+    for a, b in pair_indices:
+        wa, wb = winners[a], winners[b]
+        if wa and wa == wb and wa != "T":
+            return wa, False
+
+    # 2) normal 3-in-a-row
+    lines = [
+        (0, 1, 2),
+        (3, 4, 5),
+        (6, 7, 8),
+        (0, 3, 6),
+        (1, 4, 7),
+        (2, 5, 8),
+        (0, 4, 8),
+        (2, 4, 6),
+    ]
+    for a, b, c in lines:
+        wa, wb, wc = winners[a], winners[b], winners[c]
+        if wa and wa == wb == wc and wa != "T":
+            return wa, False
+
+    # 3) draw if everything decided
+    if all(w != "" for w in winners):
+        return "", True
+
+    return "", False
+
+
+# ---------------------------------------------------------
 # DRAW BOARD
 # ---------------------------------------------------------
 def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_small):
@@ -177,6 +232,18 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
     small = cell // 3
 
     grid_winners = st.board.get("grid_winners", [""] * 9)
+
+    # -- figure out if the game is over (server OR client detection) --
+    srv_macro_winner = st.board.get("macro_winner", "")
+    srv_macro_tied = st.board.get("macro_tied", False)
+    if srv_macro_winner or srv_macro_tied:
+        macro_winner = srv_macro_winner
+        macro_tied = srv_macro_tied
+    else:
+        # do local
+        loc_winner, loc_tied = client_evaluate_macro(st.board)
+        macro_winner = loc_winner
+        macro_tied = loc_tied
 
     # base grids
     for b in range(9):
@@ -250,7 +317,7 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
 
     # forced highlight
     forced = st.board["next_forced"]
-    if isinstance(forced, int) and forced >= 0:
+    if isinstance(forced, int) and forced >= 0 and not (macro_winner or macro_tied):
         fx = (forced % 3) * cell
         fy = TOP_BAR + (forced // 3) * cell
         overlay = pygame.Surface((cell, cell), pygame.SRCALPHA)
@@ -259,8 +326,6 @@ def draw_board(screen, st: ClientState, board_img, x_img, o_img, z_img, font_sma
         pygame.draw.rect(screen, (148, 163, 184), (fx, fy, cell, cell), 4, border_radius=6)
 
     # game over overlay
-    macro_winner = st.board.get("macro_winner", "")
-    macro_tied = st.board.get("macro_tied", False)
     if macro_winner or macro_tied:
         dim = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         dim.fill((7, 11, 17, 200))
@@ -321,7 +386,8 @@ def main():
     logo = load_image("images/logo.png")
 
     pygame.display.set_caption("Ultimate Tic-Tac-Toe")
-    pygame.display.set_icon(logo)
+    if logo:
+        pygame.display.set_icon(logo)
     clock = pygame.time.Clock()
 
     font_title = pygame.font.SysFont("Segoe UI", 42, bold=True)
@@ -442,11 +508,15 @@ def main():
             # GAME
             elif screen_mode == SCREEN_GAME:
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and client_state.board:
-                    macro_winner = client_state.board.get("macro_winner", "")
-                    macro_tied = client_state.board.get("macro_tied", False)
+                    # figure out if, from the client's POV, the game is over
+                    # (use same helper as draw)
+                    tmp_winner, tmp_tied = client_evaluate_macro(client_state.board)
+                    srv_winner = client_state.board.get("macro_winner", "")
+                    srv_tied = client_state.board.get("macro_tied", False)
+                    game_over = bool(srv_winner or srv_tied or tmp_winner or tmp_tied)
 
-                    # if game is over -> store click to check home after draw
-                    if macro_winner or macro_tied:
+                    if game_over:
+                        # store click to check vs HOME button after draw
                         pending_home_click = e.pos
                     else:
                         # normal move
@@ -476,7 +546,7 @@ def main():
             screen.fill(COLOR_BG)
             pygame.draw.rect(screen, (15, 23, 42), (0, 0, WIDTH, 90))
             pygame.draw.line(screen, (30, 41, 59), (0, 90), (WIDTH, 90), 1)
-            title = font_title.render("Ultimate Tic-Tac-Toe", True, COLOR_TEXT)
+            title = font_title.render("Ultimate Noughts and Crosses", True, COLOR_TEXT)
             screen.blit(title, title.get_rect(center=(WIDTH // 2, 45)))
             hello = font_small.render(f"Hi {username}", True, COLOR_MUTED)
             screen.blit(hello, (20, 15))
